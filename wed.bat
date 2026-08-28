@@ -92,7 +92,7 @@ if "%CHECK_ONLY%"=="1" (
 echo [4/5] Uploading the website to Vercel...
 echo [INFO] Uploading only files allowed by .vercelignore.
 echo [INFO] Vercel will submit the Production deployment without waiting indefinitely.
-echo [INFO] The Vercel build normally finishes in about 12-15 seconds.
+echo [INFO] The Vercel build normally finishes in about 12-20 seconds.
 echo.
 for /f %%T in ('powershell -NoProfile -Command "[DateTimeOffset]::UtcNow.ToUnixTimeSeconds()"') do set "DEPLOY_STARTED=%%T"
 call "!VERCEL_CMD!" deploy --prod --yes --non-interactive --no-color --no-wait --scope "%VERCEL_SCOPE%"

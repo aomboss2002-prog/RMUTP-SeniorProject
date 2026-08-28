@@ -1,12 +1,32 @@
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
 
+rem This file is also discoverable as the `git` command on Windows because it
+rem lives in the current directory. Forward real Git subcommands so tools such
+rem as Vercel CLI do not accidentally launch the GitHub publisher.
+if "%~1"=="" goto publisher_start
+if /i "%~1"=="--check" goto publisher_start
+if /i "%~1"=="--no-pause" goto publisher_start
+if /i "%~1"=="--message" goto publisher_start
+
+set "REAL_GIT_EXE="
+for /f "delims=" %%G in ('where git.exe 2^>nul') do if not defined REAL_GIT_EXE set "REAL_GIT_EXE=%%G"
+if not defined REAL_GIT_EXE (
+    echo [ERROR] Git for Windows was not found.
+    exit /b 1
+)
+"%REAL_GIT_EXE%" %*
+exit /b %errorlevel%
+
+:publisher_start
+
 set "ROOT_DIR=%~dp0"
 set "REMOTE_URL=https://github.com/aomboss2002-prog/RMUTP-SeniorProject.git"
 set "BRANCH=main"
-set "COMMIT_MESSAGE=%*"
+set "COMMIT_MESSAGE="
 set "CHECK_ONLY=0"
 set "NO_PAUSE=0"
+if /i "%~1"=="--message" set "COMMIT_MESSAGE=%~2"
 if /i "%~1"=="--check" (
     set "CHECK_ONLY=1"
     set "COMMIT_MESSAGE="

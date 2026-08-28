@@ -465,7 +465,7 @@ RMUTP Senior Project Management System
 เปิด PowerShell หรือ Command Prompt ที่โฟลเดอร์โปรเจกต์ แล้วระบุข้อความ Commit:
 
 ```bat
-.\git.bat "ปรับปรุงระบบ"
+.\git.bat --message "ปรับปรุงระบบ"
 ```
 
 หากไม่ระบุข้อความ ระบบจะสร้างข้อความ Commit พร้อมวันที่และเวลาให้อัตโนมัติ:
@@ -518,7 +518,7 @@ vercel link --scope boss-ec12
 ลำดับที่แนะนำเมื่อแก้ไขระบบเสร็จแล้วคือ:
 
 1. รัน `build.bat` หรือชุดทดสอบที่เกี่ยวข้อง
-2. รัน `git.bat "ข้อความอธิบายการแก้ไข"` เพื่อเก็บเวอร์ชันบน GitHub
+2. รัน `git.bat --message "ข้อความอธิบายการแก้ไข"` เพื่อเก็บเวอร์ชันบน GitHub
 3. รัน `wed.bat` เพื่อเผยแพร่เวอร์ชันเดียวกันขึ้น Vercel
 
 > ห้ามนำ `.env`, รหัสผ่านฐานข้อมูล, Token หรือข้อมูลลับขึ้น GitHub/Vercel Deployment โดยตรง ให้บันทึกค่าของ Production ผ่าน Vercel Environment Variables เท่านั้น
