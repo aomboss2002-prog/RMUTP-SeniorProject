@@ -95,10 +95,15 @@ function advisor_accounts(): array
 
 function shared_app_data(): array
 {
+    if (isset($GLOBALS['advisor_shared_app_data_cache'])
+        && is_array($GLOBALS['advisor_shared_app_data_cache'])) {
+        return $GLOBALS['advisor_shared_app_data_cache'];
+    }
     $statement = shared_database_connection()->prepare('SELECT state_json FROM app_state WHERE state_key = :state_key');
     $statement->execute(['state_key' => 'runtime']);
     $appData = json_decode((string) ($statement->fetchColumn() ?: ''), true);
-    return is_array($appData) ? $appData : [];
+    $GLOBALS['advisor_shared_app_data_cache'] = is_array($appData) ? $appData : [];
+    return $GLOBALS['advisor_shared_app_data_cache'];
 }
 
 function save_shared_app_data(array $appData): void
@@ -107,6 +112,7 @@ function save_shared_app_data(array $appData): void
         'INSERT INTO app_state (state_key, state_json) VALUES (:state_key, :state_json)
          ON DUPLICATE KEY UPDATE state_json = VALUES(state_json)'
     )->execute(['state_key' => 'runtime', 'state_json' => json_encode($appData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)]);
+    $GLOBALS['advisor_shared_app_data_cache'] = $appData;
     sync_shared_advisor_links($appData);
 }
 

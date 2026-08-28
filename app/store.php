@@ -807,6 +807,27 @@ function merge_database_rows(array $jsonRows, array $databaseRows): array
     return $merged;
 }
 
+function collection_rows_by_id(array $rows): array
+{
+    $indexed = [];
+    foreach ($rows as $row) {
+        if (is_array($row) && isset($row['id'])) {
+            $indexed[(string) $row['id']] = $row;
+        }
+    }
+    return $indexed;
+}
+
+function changed_collection_rows(array $rows, array $previousRows): array
+{
+    $previousById = collection_rows_by_id($previousRows);
+    return array_values(array_filter(
+        $rows,
+        static fn(array $row): bool => !isset($previousById[(string) ($row['id'] ?? '')])
+            || $previousById[(string) ($row['id'] ?? '')] !== $row
+    ));
+}
+
 function load_primary_database_collections(array $data): array
 {
     $pdo = database_connection();
@@ -974,19 +995,26 @@ function load_data(): array
         $data = apply_project_code_eligibility(apply_calculated_project_progress(
             normalize_legacy_relations(normalize_faculty_data($databaseData))
         ));
+        $data['_runtime_version'] = '20260828_02_fast_state';
         save_data($data);
         return $data;
     }
     $data = json_decode((string) $json, true);
-    $databaseData = load_primary_database_collections(is_array($data) ? $data : seed_data());
-    $normalizedData = normalize_faculty_data($databaseData);
-    $data = apply_project_code_eligibility(apply_calculated_project_progress(
-        normalize_legacy_relations($normalizedData)
-    ));
+    if (!is_array($data)) {
+        $data = seed_data();
+    }
 
-    // Persist repairs once so older installations do not keep invalid academic
-    // fields in their primary tables even though the UI shows normalized values.
-    if ($normalizedData !== $databaseData) {
+    // app_state is the canonical runtime snapshot. Every application write also
+    // synchronizes advisors, students and projects to their relational tables,
+    // so re-reading those complete tables here only adds three remote database
+    // round trips to every page/API request. Normalize older snapshots once,
+    // persist the result, then serve subsequent requests with one SELECT.
+    $runtimeVersion = '20260828_02_fast_state';
+    if (($data['_runtime_version'] ?? '') !== $runtimeVersion) {
+        $data = apply_project_code_eligibility(apply_calculated_project_progress(
+            normalize_legacy_relations(normalize_faculty_data($data))
+        ));
+        $data['_runtime_version'] = $runtimeVersion;
         save_data($data);
     }
 
@@ -997,19 +1025,43 @@ function save_data(array $data): void
 {
     $data = apply_project_code_eligibility(apply_calculated_project_progress($data));
     $pdo = database_connection();
+    $previousStatement = $pdo->prepare('SELECT state_json FROM app_state WHERE state_key = :state_key');
+    $previousStatement->execute(['state_key' => 'runtime']);
+    $previousJson = $previousStatement->fetchColumn();
+    $previousData = is_string($previousJson) ? json_decode($previousJson, true) : null;
+    $previousData = is_array($previousData) ? $previousData : [];
+
+    $advisorsToSync = changed_collection_rows($data['advisors'] ?? [], $previousData['advisors'] ?? []);
+    $studentsToSync = changed_collection_rows($data['students'] ?? [], $previousData['students'] ?? []);
+    $projectsToSync = changed_collection_rows($data['projects'] ?? [], $previousData['projects'] ?? []);
+    $messagesToSync = changed_collection_rows($data['messages'] ?? [], $previousData['messages'] ?? []);
+    $advisorInvitationsToSync = changed_collection_rows(
+        $data['advisor_invitations'] ?? [],
+        $previousData['advisor_invitations'] ?? []
+    );
+    $groupInvitationsToSync = changed_collection_rows(
+        $data['group_invitations'] ?? [],
+        $previousData['group_invitations'] ?? []
+    );
+    $groupsChanged = ($data['groups'] ?? []) !== ($previousData['groups'] ?? []);
+    $previousStudents = collection_rows_by_id($previousData['students'] ?? []);
+
     $ownsTransaction = !$pdo->inTransaction();
     if ($ownsTransaction) $pdo->beginTransaction();
     try {
-        foreach ($data['advisors'] ?? [] as $advisor) sync_advisor_to_database($advisor);
-        foreach ($data['students'] ?? [] as $student) {
+        foreach ($advisorsToSync as $advisor) sync_advisor_to_database($advisor);
+        foreach ($studentsToSync as $student) {
             sync_student_to_database($student);
-            sync_student_advisors_to_database($student);
+            $previousStudent = $previousStudents[(string) ($student['id'] ?? '')] ?? [];
+            if (($student['advisor_roles'] ?? []) !== ($previousStudent['advisor_roles'] ?? [])) {
+                sync_student_advisors_to_database($student);
+            }
         }
-        foreach ($data['projects'] ?? [] as $project) sync_project_to_database($project);
-        sync_groups_to_database($data['groups'] ?? []);
-        sync_messages_to_database($data['messages'] ?? []);
-        sync_advisor_invitations_to_database($data['advisor_invitations'] ?? []);
-        sync_group_invitations_to_database($data['group_invitations'] ?? []);
+        foreach ($projectsToSync as $project) sync_project_to_database($project);
+        if ($groupsChanged) sync_groups_to_database($data['groups'] ?? []);
+        if ($messagesToSync) sync_messages_to_database($messagesToSync);
+        if ($advisorInvitationsToSync) sync_advisor_invitations_to_database($advisorInvitationsToSync);
+        if ($groupInvitationsToSync) sync_group_invitations_to_database($groupInvitationsToSync);
         $statement = $pdo->prepare(
             'INSERT INTO app_state (state_key, state_json) VALUES (:state_key, :state_json)
              ON DUPLICATE KEY UPDATE state_json = VALUES(state_json)'

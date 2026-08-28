@@ -2,8 +2,11 @@
 
 date_default_timezone_set('Asia/Bangkok');
 
-final class DatabaseSessionHandler implements SessionHandlerInterface
+final class DatabaseSessionHandler implements SessionHandlerInterface, SessionUpdateTimestampHandlerInterface
 {
+    /** @var array<string, int> */
+    private array $knownExpirations = [];
+
     private function connection(): PDO
     {
         if (function_exists('database_connection')) return database_connection();
@@ -17,25 +20,31 @@ final class DatabaseSessionHandler implements SessionHandlerInterface
     public function read(string $id): string|false
     {
         $statement = $this->connection()->prepare(
-            'SELECT session_data FROM php_sessions WHERE session_id = :id AND expires_at > NOW()'
+            'SELECT session_data, UNIX_TIMESTAMP(expires_at) AS expires_at
+             FROM php_sessions WHERE session_id = :id AND expires_at > NOW()'
         );
         $statement->execute(['id' => $id]);
-        $value = $statement->fetchColumn();
-        return $value === false ? '' : (string) $value;
+        $row = $statement->fetch();
+        if (!is_array($row)) return '';
+        $this->knownExpirations[$id] = (int) ($row['expires_at'] ?? 0);
+        return (string) ($row['session_data'] ?? '');
     }
 
     public function write(string $id, string $data): bool
     {
         $lifetime = max(1800, (int) ini_get('session.gc_maxlifetime'));
-        return $this->connection()->prepare(
+        $expiresAt = time() + $lifetime;
+        $written = $this->connection()->prepare(
             'INSERT INTO php_sessions (session_id, session_data, expires_at)
              VALUES (:id, :data, :expires_at)
              ON DUPLICATE KEY UPDATE session_data = VALUES(session_data), expires_at = VALUES(expires_at)'
         )->execute([
             'id' => $id,
             'data' => $data,
-            'expires_at' => date('Y-m-d H:i:s', time() + $lifetime),
+            'expires_at' => date('Y-m-d H:i:s', $expiresAt),
         ]);
+        if ($written) $this->knownExpirations[$id] = $expiresAt;
+        return $written;
     }
 
     public function destroy(string $id): bool
@@ -49,6 +58,37 @@ final class DatabaseSessionHandler implements SessionHandlerInterface
         $statement = $this->connection()->prepare('DELETE FROM php_sessions WHERE expires_at <= NOW()');
         $statement->execute();
         return $statement->rowCount();
+    }
+
+    public function validateId(string $id): bool
+    {
+        if (($this->knownExpirations[$id] ?? 0) > time()) return true;
+        $statement = $this->connection()->prepare(
+            'SELECT UNIX_TIMESTAMP(expires_at) FROM php_sessions
+             WHERE session_id = :id AND expires_at > NOW()'
+        );
+        $statement->execute(['id' => $id]);
+        $expiresAt = (int) $statement->fetchColumn();
+        if ($expiresAt <= time()) return false;
+        $this->knownExpirations[$id] = $expiresAt;
+        return true;
+    }
+
+    public function updateTimestamp(string $id, string $data): bool
+    {
+        // Avoid a remote UPDATE on every read-only request. Refreshing when
+        // fewer than ten minutes remain still keeps active sessions alive.
+        if (($this->knownExpirations[$id] ?? 0) > time() + 600) return true;
+        $lifetime = max(1800, (int) ini_get('session.gc_maxlifetime'));
+        $expiresAt = time() + $lifetime;
+        $updated = $this->connection()->prepare(
+            'UPDATE php_sessions SET expires_at = :expires_at WHERE session_id = :id'
+        )->execute([
+            'id' => $id,
+            'expires_at' => date('Y-m-d H:i:s', $expiresAt),
+        ]);
+        if ($updated) $this->knownExpirations[$id] = $expiresAt;
+        return $updated;
     }
 }
 
@@ -106,7 +146,12 @@ function start_app_session(): void
         unset($_SESSION['app_user'], $_SESSION['advisor_user'], $_SESSION['csrf_token'], $_SESSION['remember_me']);
         session_regenerate_id(true);
     }
-    $_SESSION['last_activity'] = $now;
+    // Updating this timestamp on every request makes database-backed sessions
+    // dirty and forces a remote write. One update per minute is sufficient for
+    // the 30-minute idle timeout while keeping navigation responsive.
+    if ($now - $lastActivity >= 60 || !isset($_SESSION['last_activity'])) {
+        $_SESSION['last_activity'] = $now;
+    }
 }
 
 function set_remembered_session(bool $remember): void
