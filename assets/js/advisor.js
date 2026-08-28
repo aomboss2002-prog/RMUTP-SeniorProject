@@ -365,6 +365,7 @@
         if (current === 'advisor-profile') loadProfile();
         if (current === 'advisor-reports') loadStudents('#advisorReportsTable', true);
         setInterval(() => {
+            if (document.visibilityState !== 'visible') return;
             if (current === 'advisor-dashboard') loadDashboard();
             if (current === 'advisor-messages') loadMessages();
             if (current === 'advisor-notifications') loadNotifications();

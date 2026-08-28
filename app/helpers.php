@@ -65,6 +65,33 @@ function versioned_asset_url(string $path): string
     return asset_url($relativePath) . '?v=' . rawurlencode($version);
 }
 
+function page_uses_datatables(string $page): bool
+{
+    return in_array($page, [
+        'dashboard', 'students', 'student-detail', 'advisors', 'projects',
+        'documents', 'proposal', 'draft', 'complete', 'reports', 'notifications',
+        'import-excel', 'portal-documents', 'portal-notifications',
+        'advisor-dashboard', 'advisor-students', 'advisor-proposal',
+        'advisor-draft', 'advisor-complete', 'advisor-notifications',
+        'advisor-reports',
+    ], true);
+}
+
+function page_uses_charts(string $page): bool
+{
+    return in_array($page, [
+        'dashboard', 'reports', 'portal-project',
+        'advisor-dashboard', 'advisor-reports',
+    ], true);
+}
+
+function page_uses_blob_upload(string $page): bool
+{
+    return in_array($page, [
+        'portal-profile', 'portal-proposal', 'portal-draft', 'portal-complete',
+    ], true);
+}
+
 function app_pages(): array
 {
     return [

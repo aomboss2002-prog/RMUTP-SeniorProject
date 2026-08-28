@@ -11,7 +11,7 @@
     <title><?= e($meta['title'] ?? 'ระบบจัดการโครงงาน RMUTP') ?> | ระบบจัดการโครงงาน RMUTP</title>
     <link rel="icon" type="image/png" sizes="any" href="<?= e(asset_url('img/rmutp-logo.png')) ?>">
     <link href="<?= e(asset_url('vendor/bootstrap/bootstrap.min.css')) ?>" rel="stylesheet">
-    <?php if (($page ?? '') !== 'login'): ?>
+    <?php if (page_uses_datatables((string) ($page ?? ''))): ?>
         <link href="<?= e(asset_url('vendor/datatables/dataTables.bootstrap5.min.css')) ?>" rel="stylesheet">
         <link href="<?= e(asset_url('vendor/datatables/responsive.bootstrap5.min.css')) ?>" rel="stylesheet">
         <link href="<?= e(asset_url('vendor/datatables/buttons.bootstrap5.min.css')) ?>" rel="stylesheet">

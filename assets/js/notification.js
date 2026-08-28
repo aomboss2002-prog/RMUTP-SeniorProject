@@ -43,6 +43,8 @@
         const currentPage = String($('body').data('page') || '');
         if (currentPage === 'login' || currentPage.startsWith('portal-') || currentPage.startsWith('advisor-')) return;
         loadNotifications(false);
-        setInterval(() => loadNotifications(true), 15000);
+        setInterval(() => {
+            if (document.visibilityState === 'visible') loadNotifications(true);
+        }, 15000);
     });
 })(jQuery);

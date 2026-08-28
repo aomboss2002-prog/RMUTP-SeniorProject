@@ -1007,6 +1007,7 @@
 
         request('api/student/notifications/').done((response) => updateCounter(response.unread));
         setInterval(function () {
+            if (document.visibilityState !== 'visible') return;
             if (currentPage === 'portal-dashboard') loadDashboard();
             if (currentPage === 'portal-notifications') loadNotifications();
             if (currentPage === 'portal-messages') loadMessages();
@@ -1015,6 +1016,7 @@
         }, refreshMs);
 
         setInterval(function () {
+            if (document.visibilityState !== 'visible') return;
             if (currentPage === 'portal-project' && !$('#groupAdvisorInvitationForm').hasClass('d-none')) {
                 if ($('.group-advisor-select').is(':focus')) {
                     return;
