@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="520" viewBox="0 0 980 520" role="img" aria-labelledby="title desc">
+  <title id="title">Troubleshooting console screenshot</title>
+  <desc id="desc">Example friendly error output when PHP or MySQL is missing.</desc>
+  <rect width="980" height="520" fill="#221616"/>
+  <rect x="28" y="28" width="924" height="464" rx="8" fill="#140d0d" stroke="#593333"/>
+  <text x="56" y="76" fill="#ffe7d9" font-family="Consolas, monospace" font-size="22">RMUTP Senior Project - Windows Installer</text>
+  <text x="56" y="132" fill="#ffb86b" font-family="Consolas, monospace" font-size="20">[Missing] PHP was not found.</text>
+  <text x="56" y="170" fill="#ffe7d9" font-family="Consolas, monospace" font-size="18">Install PHP 8.x or XAMPP, then add php.exe to your Windows PATH.</text>
+  <text x="56" y="204" fill="#ffe7d9" font-family="Consolas, monospace" font-size="18">XAMPP default path: C:\xampp\php</text>
+  <text x="56" y="268" fill="#ffb86b" font-family="Consolas, monospace" font-size="20">[Missing] MySQL client was not found.</text>
+  <text x="56" y="306" fill="#ffe7d9" font-family="Consolas, monospace" font-size="18">Install MySQL, MariaDB, WAMP, or XAMPP and make sure mysql.exe is available.</text>
+  <text x="56" y="340" fill="#ffe7d9" font-family="Consolas, monospace" font-size="18">XAMPP default path: C:\xampp\mysql\bin</text>
+  <text x="56" y="414" fill="#ffffff" font-family="Consolas, monospace" font-size="24">INSTALL FAILED</text>
+</svg>

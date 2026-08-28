@@ -1,0 +1,692 @@
+(function ($) {
+    'use strict';
+
+    let advisors = [];
+    let students = [];
+    let projects = [];
+    const businessFaculty = 'คณะบริหารธุรกิจ';
+    const businessMajors = [
+        'บช.บ. บัญชีบัณฑิต (ได้รับการรับรองจากสภาวิชาชีพบัญชี)',
+        'บธ.บ. สาขาวิชาการจัดการ',
+        'บธ.บ. สาขาวิชาการจัดการโลจิสติกส์และโซ่อุปทาน',
+        'บธ.บ. สาขาวิชาการตลาด',
+        'บธ.บ. สาขาวิชานวัตกรรมทางการเงินและการลงทุน',
+        'บธ.บ. สาขาวิชาระบบสารสนเทศและนวัตกรรมดิจิทัล',
+        'บธ.บ. สาขาวิชาการจัดการธุรกิจระหว่างประเทศ (หลักสูตรนานาชาติ)',
+        'วท.บ. สาขาวิชาการวิเคราะห์ข้อมูลทางธุรกิจ',
+        'บธ.บ. สาขาวิชาการเป็นผู้ประกอบการ',
+        'บธ.บ. สาขาวิชานวัตกรรมธุรกิจบริการยั่งยืน'
+    ];
+
+    function loadLookups() {
+        return $.when(App.api('advisors'), App.api('students'), App.api('projects')).done(function (advisorResponse, studentResponse, projectResponse) {
+            advisors = advisorResponse[0].data || [];
+            students = studentResponse[0].data || [];
+            projects = projectResponse[0].data || [];
+            fillSelect('#advisorInput', advisors, 'id', 'name');
+            fillSelect('#uploadStudent', students, 'id', (row) => `${row.first_name} ${row.last_name}`);
+            fillSelect('#uploadProject, #projectInput, #barcodeProject, #timelineProject', projects, 'id', (row) => `${row.code} - ${row.title}`);
+        });
+    }
+
+    function fillSelect(selector, rows, valueKey, labelKey) {
+        const $select = $(selector);
+        if (!$select.length) {
+            return;
+        }
+        const html = rows.map((row) => {
+            const label = typeof labelKey === 'function' ? labelKey(row) : row[labelKey];
+            return `<option value="${App.escapeHtml(row[valueKey])}">${App.escapeHtml(label)}</option>`;
+        }).join('');
+        $select.html(html);
+    }
+
+    function advisorName(id) {
+        return (advisors.find((row) => row.id === id) || {}).name || id || '';
+    }
+
+    function projectName(id) {
+        return (projects.find((row) => row.id === id) || {}).title || id || '';
+    }
+
+    function studentName(id) {
+        const student = students.find((row) => row.id === id) || {};
+        return `${student.first_name || ''} ${student.last_name || ''}`.trim() || id || '';
+    }
+
+    function loadNavbarProfile() {
+        App.api('profile').done(function (response) {
+            const profile = response.data || {};
+            $('#adminNavbarName').text(profile.name || profile.role || 'ผู้ดูแล');
+        });
+    }
+
+    function loadStudentsTable() {
+        $.when(loadLookups()).done(function () {
+            $('#studentsTable tbody').html(students.map((row) => `
+                <tr data-status="${App.escapeHtml(row.status)}">
+                    <td>${App.escapeHtml(row.code)}</td>
+                    <td><strong>${App.escapeHtml(row.first_name)} ${App.escapeHtml(row.last_name)}</strong><span class="d-block text-muted">${App.escapeHtml(row.email)}</span></td>
+                    <td>${App.escapeHtml(row.major)}</td>
+                    <td>${App.escapeHtml(advisorName(row.advisor_id))}</td>
+                    <td data-search="${App.escapeHtml(row.status)}">${App.badge(row.status)}</td>
+                    <td class="text-end">
+                        <div class="row-actions" role="group" aria-label="จัดการนักศึกษา">
+                            <a class="row-action view" href="${App.url(`admin/students/detail.php?id=${row.id}`)}" title="ดูรายละเอียด" aria-label="ดูรายละเอียด"><i class="fa-solid fa-eye"></i></a>
+                            <a class="row-action edit" href="${App.url(`admin/students/edit.php?id=${row.id}`)}" title="แก้ไข" aria-label="แก้ไข"><i class="fa-solid fa-pen"></i></a>
+                            <button class="row-action delete" type="button" data-action="delete-student" data-id="${row.id}" title="ลบ" aria-label="ลบ"><i class="fa-solid fa-trash"></i></button>
+                        </div>
+                    </td>
+                </tr>`).join(''));
+            const table = App.enhanceTable('#studentsTable');
+            $('#studentStatusFilter').off('change').on('change', function () {
+                table.column(4).search($(this).val()).draw();
+            });
+        });
+    }
+
+    function initStudentForm() {
+        const $form = $('#studentForm');
+        let previewObjectUrl = null;
+        const $photoInput = $('#studentPhotoFile');
+        const $photoPreview = $('#studentPhotoPreview');
+
+        $photoInput.on('change', function () {
+            const file = this.files[0];
+            if (!file) return;
+            if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+                this.value = '';
+                return App.toast('กรุณาเลือกไฟล์ JPG, PNG, WEBP หรือ GIF ขนาดไม่เกิน 5 MB', 'error');
+            }
+            if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+            previewObjectUrl = URL.createObjectURL(file);
+            $photoPreview.attr('src', previewObjectUrl);
+        });
+
+        (function () {
+            const mode = $form.data('mode');
+            const id = $form.data('id');
+            if (mode === 'edit' && id) {
+                App.api('students', { query: { id } }).done(function (response) {
+                    const row = response.data.student;
+                    Object.keys(row).forEach((key) => $form.find(`[name="${key}"]`).val(row[key]));
+                    $photoPreview.attr('src', App.url(`api/profile-photo.php?id=${encodeURIComponent(id)}&v=${Date.now()}`));
+                });
+            }
+            $form.on('submit', function (event) {
+                event.preventDefault();
+                const formData = new FormData(this);
+                if (mode === 'edit') {
+                    formData.append('_method', 'PUT');
+                    formData.append('id', id);
+                }
+                App.showLoader(true);
+                App.api('students', { method: 'POST', formData })
+                    .done(function (response) {
+                        App.toast(response.message);
+                        window.location.href = mode === 'edit' ? App.url(`admin/students/detail.php?id=${id}`) : App.url('admin/students/index.php');
+                    })
+                    .always(() => App.showLoader(false));
+            });
+        })();
+    }
+
+    function loadStudentDetail() {
+        const id = $('#studentDetailId').val();
+        App.api('students', { query: { id } }).done(function (response) {
+            const data = response.data;
+            const student = data.student;
+            $('#studentPhoto').attr('src', App.url(`api/profile-photo.php?id=${encodeURIComponent(student.id)}`));
+            $('#studentFullName').text(`${student.first_name} ${student.last_name}`);
+            $('#studentCode').text(student.code);
+            $('#studentStatus').html(App.badge(student.status));
+            $('#studentAdvisor').html(`
+                <strong>${App.escapeHtml(data.advisor?.name || '')}</strong>
+                <span class="d-block text-muted">${App.escapeHtml(data.advisor?.department || '')}</span>
+                <span class="d-block">${App.escapeHtml(data.advisor?.email || '')}</span>`);
+            $('#studentInfoGrid').html([
+                ['อีเมล', student.email],
+                ['เบอร์โทรศัพท์', student.phone],
+                ['คณะ', student.faculty],
+                ['สาขา', student.major],
+                ['ชั้นปี', student.year_level],
+                ['โครงงาน', data.project?.title || '']
+            ].map((item) => `<div class="detail-item"><span>${item[0]}</span><strong>${App.escapeHtml(item[1])}</strong></div>`).join(''));
+            $('#studentTimeline').html(data.timeline.map(timelineItem).join('') || '<p class="text-muted mb-0">ยังไม่มีข้อมูลไทม์ไลน์</p>');
+            $('#studentFilesTable tbody').html(data.files.map(documentRow).join(''));
+            App.enhanceTable('#studentFilesTable', { searching: false, pageLength: 5 });
+            $('#studentComments').html(data.comments.map((row) => `
+                <div class="list-group-item">
+                    <strong>${App.escapeHtml(row.author)}</strong>
+                    <span class="d-block">${App.escapeHtml(row.message)}</span>
+                    <small class="text-muted">${App.escapeHtml(row.created_at)}</small>
+                </div>`).join('') || '<div class="list-group-item text-muted">ยังไม่มีความคิดเห็น</div>');
+            $('#approvalHistoryTable tbody').html(data.approvals.map((row) => `
+                <tr><td>${App.escapeHtml(row.step)}</td><td>${App.escapeHtml(row.reviewer)}</td><td>${App.badge(row.status)}</td><td>${App.escapeHtml(row.created_at)}</td></tr>`).join(''));
+            App.enhanceTable('#approvalHistoryTable', { searching: false, pageLength: 5 });
+        });
+    }
+
+    function timelineItem(row) {
+        return `<div class="timeline-item"><strong>${App.escapeHtml(row.step || row.title)}</strong><span class="d-block text-muted">${App.escapeHtml(row.reviewer || row.actor || '')} · ${App.escapeHtml(row.created_at || row.updated_at || '')}</span>${App.badge(row.status || 'Review')}</div>`;
+    }
+
+    function documentRow(row) {
+        const fileUrl = App.url(`api/file.php?id=${encodeURIComponent(row.id)}`);
+        return `
+            <tr>
+                <td><strong>${App.escapeHtml(row.title)}</strong><span class="d-block text-muted">${App.escapeHtml(row.filename)}</span></td>
+                <td>${App.escapeHtml(App.label(row.type))}</td>
+                <td>${App.badge(row.status)}</td>
+                <td class="text-end">
+                    <div class="row-actions" role="group" aria-label="จัดการเอกสาร">
+                        <button class="row-action view" data-action="preview-file" data-url="${App.escapeHtml(fileUrl)}" title="ดูตัวอย่าง" aria-label="ดูตัวอย่าง"><i class="fa-solid fa-eye"></i></button>
+                        <a class="row-action edit" href="${App.url(`admin/page.php?view=${encodeURIComponent(row.type)}`)}" title="จัดการเอกสาร" aria-label="จัดการเอกสาร"><i class="fa-solid fa-rotate"></i></a>
+                        <button class="row-action delete" data-action="delete-document" data-id="${App.escapeHtml(row.id)}" title="ลบ" aria-label="ลบ"><i class="fa-solid fa-trash"></i></button>
+                    </div>
+                </td>
+            </tr>`;
+    }
+
+    function loadAdvisorsTable() {
+        App.api('advisors').done(function (response) {
+            $('#advisorsTable tbody').html(response.data.map((row) => `
+                <tr>
+                    <td><strong>${App.escapeHtml(row.name)}</strong></td>
+                    <td>${App.escapeHtml(row.department)}</td>
+                    <td>${App.escapeHtml(row.email)}</td>
+                    <td>${App.escapeHtml(row.students)}</td>
+                    <td>${App.badge(row.status)}</td>
+                    <td class="text-end"><div class="row-actions single"><button class="row-action view" data-action="show-advisor" data-id="${row.id}" title="ดูรายละเอียด" aria-label="ดูรายละเอียด"><i class="fa-regular fa-eye"></i><span>ดูข้อมูล</span></button></div></td>
+                </tr>`).join(''));
+            App.enhanceTable('#advisorsTable');
+        });
+    }
+
+    function loadProjectsTable() {
+        App.api('projects').done(function (response) {
+            projects = response.data;
+            $('#projectStatusFilter').val('');
+            $('#projectsTable tbody').html(projects.map((row) => `
+                <tr>
+                    <td>${App.escapeHtml(row.code)}</td>
+                    <td><strong>${App.escapeHtml(row.title)}</strong><span class="d-block text-muted">${App.escapeHtml(row.category)}</span></td>
+                    <td>${App.escapeHtml(row.student_name)}</td>
+                    <td>${App.escapeHtml(row.advisor_name)}</td>
+                    <td><div class="progress"><div class="progress-bar" style="width:${Number(row.progress) || 0}%">${App.escapeHtml(row.progress)}%</div></div></td>
+                    <td data-search="${App.escapeHtml(row.status)}">${App.badge(row.status)}</td>
+                    <td class="text-end">
+                        <div class="row-actions" role="group" aria-label="จัดการโครงงาน">
+                            <a class="row-action view" href="${App.url(`admin/page.php?view=timeline&project=${row.id}`)}" title="ดูไทม์ไลน์" aria-label="ดูไทม์ไลน์"><i class="fa-solid fa-timeline"></i></a>
+                            <a class="row-action edit" href="${App.url(`admin/page.php?view=barcode&project=${row.id}`)}" title="ดูบาร์โค้ด" aria-label="ดูบาร์โค้ด"><i class="fa-solid fa-barcode"></i></a>
+                            ${row.status === 'Completed' && row.complete_approved
+                                ? '<button class="row-action approve" type="button" title="เสร็จสมบูรณ์แล้ว" aria-label="เสร็จสมบูรณ์แล้ว" disabled><i class="fa-solid fa-check"></i></button>'
+                                : row.complete_approved
+                                    ? `<button class="row-action approve" type="button" data-action="complete-project" data-id="${App.escapeHtml(row.id)}" title="ทำเครื่องหมายว่าเสร็จสมบูรณ์" aria-label="ทำเครื่องหมายว่าเสร็จสมบูรณ์"><i class="fa-solid fa-check"></i></button>`
+                                    : '<button class="row-action approve" type="button" title="ต้องอนุมัติฉบับสมบูรณ์ก่อน" aria-label="ยังทำเป็นเสร็จสมบูรณ์ไม่ได้" disabled><i class="fa-solid fa-lock"></i></button>'}
+                        </div>
+                    </td>
+                </tr>`).join(''));
+            const table = App.enhanceTable('#projectsTable');
+            $('#projectStatusFilter').off('change').on('change', function () {
+                table.column(5).search($(this).val()).draw();
+            });
+        });
+    }
+
+    function loadDocuments(type) {
+        $.when(loadLookups(), App.api('documents', { query: type ? { type } : {} })).done(function (_lookups, documentsResponse) {
+            const rows = documentsResponse[0].data || [];
+            const tableSelector = type ? '#documentStageTable' : '#documentsTable';
+            $(tableSelector + ' tbody').html(rows.map((row) => type ? `
+                <tr>
+                    <td><strong>${App.escapeHtml(row.title)}</strong><span class="d-block text-muted">${App.escapeHtml(row.filename)}</span></td>
+                    <td>${App.escapeHtml(studentName(row.student_id))}</td>
+                    <td>${App.escapeHtml(row.size)}</td>
+                    <td>${App.badge(row.status)}</td>
+                    <td>${App.escapeHtml(row.uploaded_at)}</td>
+                    <td class="text-end">
+                        <div class="row-actions" role="group" aria-label="จัดการเอกสาร">
+                            <button class="row-action view" data-action="preview-file" data-url="${App.url(`api/file.php?id=${encodeURIComponent(row.id)}`)}" title="ดูตัวอย่าง" aria-label="ดูตัวอย่าง"><i class="fa-solid fa-eye"></i></button>
+                            <button class="row-action delete" data-action="delete-document" data-id="${row.id}" title="ลบ" aria-label="ลบ"><i class="fa-solid fa-trash"></i></button>
+                        </div>
+                    </td>
+                </tr>` : `
+                <tr>
+                    <td><strong>${App.escapeHtml(row.title)}</strong><span class="d-block text-muted">${App.escapeHtml(row.filename)}</span></td>
+                    <td>${App.escapeHtml(row.type)}</td>
+                    <td>${App.escapeHtml(projectName(row.project_id))}</td>
+                    <td>${App.escapeHtml(row.size)}</td>
+                    <td>${App.badge(row.status)}</td>
+                    <td>${App.escapeHtml(row.uploaded_at)}</td>
+                    <td class="text-end">${documentRow(row).match(/<td class="text-end">([\s\S]*)<\/td>/)?.[1] || ''}</td>
+                </tr>`).join(''));
+            App.enhanceTable(tableSelector);
+            if (!type) {
+                ['proposal', 'draft', 'complete'].forEach((key) => $(`[data-doc-count="${key}"]`).text(rows.filter((row) => row.type === key).length));
+            }
+        });
+    }
+
+    function initUpload() {
+        $.when(loadLookups()).done(function () {
+            const $file = $('#documentFile');
+            const $drop = $('#dropZone');
+
+            $drop.on('dragover', function (event) {
+                event.preventDefault();
+                $drop.addClass('drag-over');
+            }).on('dragleave drop', function (event) {
+                event.preventDefault();
+                $drop.removeClass('drag-over');
+                const files = event.originalEvent.dataTransfer?.files;
+                if (files && files.length) {
+                    $file[0].files = files;
+                    App.toast(files[0].name, 'info');
+                }
+            });
+
+            $('[data-action="preview-selected-file"]').on('click', function () {
+                const file = $file[0].files[0];
+                if (!file) {
+                    App.toast('Choose a PDF first', 'info');
+                    return;
+                }
+                $('#pdfPreviewFrame').attr('src', URL.createObjectURL(file));
+                bootstrap.Modal.getOrCreateInstance(document.getElementById('filePreviewModal')).show();
+            });
+
+            $('#documentUploadForm').on('submit', function (event) {
+                event.preventDefault();
+                const formData = new FormData(this);
+                const $bar = $('#uploadProgress');
+                $.ajax({
+                    url: 'api/index.php?resource=upload',
+                    method: 'POST',
+                    data: formData,
+                    processData: false,
+                    contentType: false,
+                    xhr: function () {
+                        const xhr = $.ajaxSettings.xhr();
+                        xhr.upload.onprogress = function (event) {
+                            if (event.lengthComputable) {
+                                const percent = Math.round((event.loaded / event.total) * 100);
+                                $bar.css('width', percent + '%').text(percent + '%');
+                            }
+                        };
+                        return xhr;
+                    }
+                }).done(function (response) {
+                    App.toast(response.message);
+                    $bar.css('width', '0%').text('0%');
+                    loadDocuments($('#documentUploadForm').data('type'));
+                }).fail(function (xhr) {
+                    App.toast(xhr.responseJSON?.message || 'Upload failed', 'error');
+                });
+            });
+        });
+    }
+
+    function initBarcode() {
+        function updateBarcodeProject() {
+            const project = projects.find((row) => row.id === $('#barcodeProject').val());
+            const available = !!project && project.barcode_available === true;
+            $('#barcodeText').val(available ? project.code : '');
+            $('#adminBarcodeLocked').toggleClass('d-none', available);
+            if (!available) {
+                const reason = !project
+                    ? 'ไม่พบข้อมูลโครงงาน'
+                    : !project.complete_approved
+                        ? 'ยังสร้างบาร์โค้ดไม่ได้: ต้องส่งและอนุมัติฉบับสมบูรณ์ก่อน'
+                        : 'ยังสร้างบาร์โค้ดไม่ได้: โครงงานยังไม่มีรหัสโครงงาน';
+                $('#adminBarcodeLocked').text(reason);
+            }
+            $('[data-action="generate-barcode"], [data-action="print-barcode"], [data-action="download-barcode"]')
+                .prop('disabled', !available)
+                .toggleClass('disabled', !available);
+            if (available) {
+                renderBarcode(project.code);
+            } else {
+                $('#barcodeCanvas').empty();
+                $('#barcodeLabel').text('');
+            }
+        }
+        loadLookups().done(function () {
+            const projectParam = new URLSearchParams(window.location.search).get('project');
+            if (projectParam) {
+                $('#barcodeProject').val(projectParam);
+            }
+            updateBarcodeProject();
+        });
+        $('#barcodeProject').on('change', updateBarcodeProject);
+        $('[data-action="generate-barcode"]').on('click', () => renderBarcode($('#barcodeText').val()));
+        $('[data-action="print-barcode"]').on('click', () => window.print());
+        $('[data-action="download-barcode"]').on('click', downloadBarcodePng);
+    }
+
+    function renderBarcode(value) {
+        const text = value || '';
+        if (!text) {
+            $('#barcodeCanvas').empty();
+            $('#barcodeLabel').text('');
+            return;
+        }
+        const bars = text.split('').map((char) => {
+            const width = (char.charCodeAt(0) % 4) + 2;
+            return `<span class="barcode-bar" style="width:${width}px"></span>`;
+        }).join('');
+        $('#barcodeCanvas').html(bars);
+        $('#barcodeLabel').text(text);
+    }
+
+    function downloadBarcodePng() {
+        const label = $('#barcodeLabel').text();
+        const canvas = document.createElement('canvas');
+        canvas.width = 720;
+        canvas.height = 260;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        let x = 70;
+        label.split('').forEach((char) => {
+            const width = (char.charCodeAt(0) % 4) + 4;
+            ctx.fillStyle = '#111827';
+            ctx.fillRect(x, 44, width, 140);
+            x += width + 4;
+        });
+        ctx.fillStyle = '#0B3C8C';
+        ctx.font = '24px Segoe UI';
+        ctx.fillText(label, 70, 225);
+        const link = document.createElement('a');
+        link.download = `${label}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+    }
+
+    function initTimeline() {
+        loadLookups().done(function () {
+            const selected = new URLSearchParams(window.location.search).get('project') || projects[0]?.id;
+            $('#timelineProject').val(selected);
+            renderProjectTimeline(selected);
+        });
+        $('#timelineProject').on('change', function () {
+            renderProjectTimeline($(this).val());
+        });
+    }
+
+    function renderProjectTimeline(projectId) {
+        const project = projects.find((row) => row.id === projectId) || projects[0] || {};
+        const steps = [
+            { step: 'Proposal', status: project.status === 'Draft' ? 'Pending' : 'Approved', reviewer: project.advisor_name, created_at: project.updated_at },
+            { step: 'Draft', status: ['Approved', 'Completed'].includes(project.status) ? 'Approved' : 'Review', reviewer: project.advisor_name, created_at: project.updated_at },
+            { step: 'Complete', status: project.status === 'Completed' ? 'Completed' : 'Pending', reviewer: 'Committee', created_at: project.updated_at }
+        ];
+        $('#projectTimeline').html(steps.map(timelineItem).join(''));
+    }
+
+    function loadReports() {
+        App.api('reports').done(function (response) {
+            const projects = response.data.projects;
+            $('#reportsTable tbody').html(projects.map((row) => `
+                <tr><td>${App.escapeHtml(row.code)}</td><td>${App.escapeHtml(row.title)}</td><td>${App.escapeHtml(row.student_name)}</td><td>${App.escapeHtml(row.advisor_name)}</td><td>${App.badge(row.status)}</td><td>${App.escapeHtml(row.progress)}%</td></tr>`).join(''));
+            App.enhanceTable('#reportsTable');
+
+            const statusCounts = countBy(projects, 'status');
+            renderChart('reportStatusChart', 'pie', statusCounts);
+            const docCounts = countBy(response.data.documents, 'type');
+            renderChart('reportDocumentChart', 'bar', docCounts);
+        });
+    }
+
+    function countBy(rows, key) {
+        return rows.reduce((acc, row) => {
+            acc[row[key]] = (acc[row[key]] || 0) + 1;
+            return acc;
+        }, {});
+    }
+
+    function renderChart(id, type, counts) {
+        const ctx = document.getElementById(id);
+        if (!ctx || !window.Chart) {
+            return;
+        }
+        if (App.state.charts[id]) {
+            App.state.charts[id].destroy();
+        }
+        App.state.charts[id] = new Chart(ctx, {
+            type,
+            data: { labels: Object.keys(counts), datasets: [{ data: Object.values(counts), backgroundColor: ['#0B3C8C', '#F4C542', '#0F7C9F', '#168A4A', '#64748B'] }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+        });
+    }
+
+    function initImport() {
+        const sample = [
+            ['66019901', 'Arisa', 'Phong', 'arisa@rmutp.ac.th', 'Computer Engineering'],
+            ['66019902', 'Krit', 'Somchai', 'krit@rmutp.ac.th', 'Information Technology']
+        ];
+        $('#excelFile').on('change', function () {
+            const file = this.files[0];
+            if (!file) {
+                return;
+            }
+            if (!file.name.toLowerCase().endsWith('.csv')) {
+                renderImportRows(sample);
+                App.toast('Excel file accepted. Preview uses sample rows until server-side parsing is added.', 'info');
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = () => {
+                const rows = reader.result.split(/\r?\n/).filter(Boolean).slice(1).map((line) => line.split(',').slice(0, 5));
+                renderImportRows(rows);
+            };
+            reader.readAsText(file);
+        });
+        $('[data-action="download-sample-csv"]').on('click', function () {
+            App.downloadCsv('student-import-sample.csv', sample.map((row) => ({ code: row[0], first_name: row[1], last_name: row[2], email: row[3], major: row[4] })));
+        });
+        $('[data-action="import-preview"]').on('click', function () {
+            const rows = [];
+            $('#importPreviewTable tbody tr').each(function () {
+                rows.push($(this).find('td').map(function () { return $(this).text(); }).get());
+            });
+            App.api('import', { method: 'POST', data: { rows } }).done((response) => App.toast(response.message));
+        });
+        renderImportRows(sample);
+    }
+
+    function renderImportRows(rows) {
+        $('#importPreviewTable tbody').html(rows.map((row) => `<tr>${row.map((cell) => `<td>${App.escapeHtml(cell)}</td>`).join('')}</tr>`).join(''));
+        App.enhanceTable('#importPreviewTable');
+    }
+
+    function initProfile() {
+        App.api('profile').done(function (response) {
+            const profile = response.data;
+            $('#profileName, #profileNamePreview').val(profile.name).text(profile.name);
+            $('#profileEmail').val(profile.email);
+            $('#profileRole, #profileRolePreview').val(profile.role).text(profile.role);
+            $('#profileAvatar').attr('src', App.url(profile.avatar || 'assets/img/profile-admin.svg'));
+            $('#profileAvatarInput').val(profile.avatar || '');
+        });
+        $('#profileForm').on('submit', function (event) {
+            event.preventDefault();
+            App.api('profile', { method: 'POST', data: App.formToObject($(this)) }).done((response) => {
+                App.toast(response.message);
+                $('#profileNamePreview').text(response.data.name);
+                $('#profileRolePreview').text(response.data.role);
+                $('#profileAvatar').attr('src', App.url(response.data.avatar || 'assets/img/profile-admin.svg'));
+            });
+        });
+    }
+
+    function initSettings() {
+        App.api('settings').done(function (response) {
+            const settings = response.data;
+            $('#systemName').val(settings.system_name);
+            $('#academicYear').val(settings.academic_year);
+            $('#approvalMode').val(settings.approval_mode);
+            $('#notificationRefresh').val(settings.notification_refresh);
+        });
+        $('#settingsForm').on('submit', function (event) {
+            event.preventDefault();
+            App.api('settings', { method: 'POST', data: App.formToObject($(this)) }).done((response) => App.toast(response.message));
+        });
+        $('#themePreference').on('change', function () {
+            $('body').toggleClass('high-contrast', $(this).val() === 'contrast');
+            App.toast('Theme updated', 'info');
+        });
+    }
+
+    $(document).on('click', '[data-action="delete-student"]', function () {
+        const id = $(this).data('id');
+        App.confirmAction('Delete student?', 'This removes the student from the local REST data store.').then((result) => {
+            if (result.isConfirmed) {
+                App.api('students', { method: 'DELETE', query: { id } }).done((response) => {
+                    App.toast(response.message);
+                    loadStudentsTable();
+                });
+            }
+        });
+    });
+
+    $(document).on('click', '[data-action="delete-document"]', function () {
+        const id = $(this).data('id');
+        App.confirmAction('Delete file?', 'The document record will be removed.').then((result) => {
+            if (result.isConfirmed) {
+                App.api('documents', { method: 'DELETE', query: { id } }).done((response) => {
+                    App.toast(response.message);
+                    const type = $('#documentStageTable').data('type') || null;
+                    loadDocuments(type);
+                });
+            }
+        });
+    });
+
+    $(document).on('click', '[data-action="complete-project"]', function () {
+        const id = $(this).data('id');
+        if (!String(id).startsWith('PRJ')) {
+            App.toast('ไม่พบรหัสโครงงานที่ถูกต้อง', 'error');
+            return;
+        }
+        App.api('projects', { method: 'POST', query: { action: 'status' }, data: { id, status: 'Completed' } }).done(function (response) {
+            App.toast(response.message);
+            loadProjectsTable();
+        });
+    });
+
+    $(document).on('click', '[data-action="add-comment"]', function () {
+        Swal.fire({
+            title: 'Add Comment',
+            input: 'textarea',
+            inputPlaceholder: 'Comment',
+            showCancelButton: true,
+            confirmButtonColor: '#0B3C8C'
+        }).then((result) => {
+            if (!result.isConfirmed || !result.value) {
+                return;
+            }
+            App.api('comments', { method: 'POST', data: { student_id: $('#studentDetailId').val(), message: result.value } }).done(function (response) {
+                App.toast(response.message);
+                loadStudentDetail();
+            });
+        });
+    });
+
+    $(document).on('click', '[data-action="add-advisor"]', function (event) {
+        event.preventDefault();
+        Swal.fire({
+            title: '<span class="advisor-modal-title"><i class="fa-solid fa-user-tie"></i> เพิ่มอาจารย์</span>',
+            html: `<div class="advisor-modal-form">
+                <p class="advisor-modal-subtitle">กรอกข้อมูลเพื่อสร้างบัญชีอาจารย์ในระบบ</p>
+                <label for="advisorNameSwal">ชื่อ-นามสกุล <span>*</span></label>
+                <div class="advisor-modal-control"><i class="fa-regular fa-user"></i><input id="advisorNameSwal" type="text" placeholder="เช่น ผศ.ดร. สมชาย ใจดี" autocomplete="name"></div>
+                <label for="advisorEmailSwal">อีเมล <span>*</span></label>
+                <div class="advisor-modal-control"><i class="fa-regular fa-envelope"></i><input id="advisorEmailSwal" type="email" placeholder="advisor@rmutp.ac.th" autocomplete="email"></div>
+                <label for="advisorFacultySwal">คณะ <span>*</span></label>
+                <div class="advisor-modal-control"><i class="fa-solid fa-building-columns"></i><select id="advisorFacultySwal"><option value="${businessFaculty}">${businessFaculty}</option></select></div>
+                <label for="advisorDeptSwal">สาขา / ภาควิชา <span>*</span></label>
+                <div class="advisor-modal-control"><i class="fa-solid fa-graduation-cap"></i><select id="advisorDeptSwal">${businessMajors.map((major) => `<option value="${App.escapeHtml(major)}">${App.escapeHtml(major)}</option>`).join('')}</select></div>
+                <label for="advisorPasswordSwal">รหัสผ่าน <span>*</span></label>
+                <div class="advisor-modal-control"><i class="fa-solid fa-lock"></i><input id="advisorPasswordSwal" type="password" minlength="8" autocomplete="new-password" placeholder="อย่างน้อย 8 ตัวอักษร"><button id="advisorPasswordToggle" type="button" aria-label="แสดงหรือซ่อนรหัสผ่าน"><i class="fa-regular fa-eye"></i></button></div>
+            </div>`,
+            focusConfirm: false,
+            showCancelButton: true,
+            confirmButtonText: '<i class="fa-solid fa-user-plus"></i> เพิ่มอาจารย์',
+            cancelButtonText: 'ยกเลิก',
+            confirmButtonColor: '#0B3C8C',
+            cancelButtonColor: '#E8EEF7',
+            buttonsStyling: true,
+            customClass: {
+                popup: 'advisor-create-modal',
+                confirmButton: 'advisor-modal-confirm',
+                cancelButton: 'advisor-modal-cancel',
+                actions: 'advisor-modal-actions'
+            },
+            didOpen: () => {
+                $('#advisorNameSwal').trigger('focus');
+                $('#advisorPasswordToggle').on('click', function () {
+                    const input = document.getElementById('advisorPasswordSwal');
+                    const show = input.type === 'password';
+                    input.type = show ? 'text' : 'password';
+                    $(this).find('i').toggleClass('fa-eye', !show).toggleClass('fa-eye-slash', show);
+                });
+            },
+            preConfirm: () => {
+                const advisor = {
+                    name: $('#advisorNameSwal').val().trim(),
+                    email: $('#advisorEmailSwal').val().trim(),
+                    faculty: $('#advisorFacultySwal').val(),
+                    department: $('#advisorDeptSwal').val().trim(),
+                    password: $('#advisorPasswordSwal').val(),
+                    phone: '',
+                    status: 'Active'
+                };
+                if (!advisor.name || !advisor.department || !/^\S+@\S+\.\S+$/.test(advisor.email)) {
+                    Swal.showValidationMessage('กรุณากรอกชื่อ สาขา และอีเมลให้ถูกต้อง');
+                    return false;
+                }
+                if (advisor.password.length < 8) {
+                    Swal.showValidationMessage('รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร');
+                    return false;
+                }
+                return advisor;
+            }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                App.api('advisors', { method: 'POST', data: result.value }).done((response) => {
+                    App.toast(response.message);
+                    loadAdvisorsTable();
+                });
+            }
+        });
+    });
+
+    $(document).on('click', '[data-action="show-advisor"]', function () {
+        const advisor = advisors.find((row) => row.id === $(this).data('id'));
+        $('#recordModalTitle').text(advisor?.name || 'Advisor');
+        $('#recordModalBody').html(`<p><strong>Email:</strong> ${App.escapeHtml(advisor?.email || '')}</p><p><strong>Department:</strong> ${App.escapeHtml(advisor?.department || '')}</p><p><strong>Students:</strong> ${App.escapeHtml(advisor?.students || 0)}</p>`);
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('recordModal')).show();
+    });
+
+    $(document).on('click', '[data-action="refresh-reports"]', loadReports);
+
+    $(function () {
+        const page = $('body').data('page');
+        if (String(page || '').startsWith('portal-') || String(page || '').startsWith('advisor-') || page === 'login') return;
+        loadNavbarProfile();
+        if (page === 'students') loadStudentsTable();
+        if (page === 'student-add' || page === 'student-edit') initStudentForm();
+        if (page === 'student-detail') loadStudentDetail();
+        if (page === 'advisors') { loadLookups().done(loadAdvisorsTable); }
+        if (page === 'projects') loadProjectsTable();
+        if (page === 'documents') loadDocuments();
+        if (['proposal', 'draft', 'complete'].includes(page)) { initUpload(); loadDocuments(page); }
+        if (page === 'barcode') initBarcode();
+        if (page === 'timeline') initTimeline();
+        if (page === 'reports') loadReports();
+        if (page === 'import-excel') initImport();
+        if (page === 'profile') initProfile();
+        if (page === 'settings') initSettings();
+    });
+})(jQuery);

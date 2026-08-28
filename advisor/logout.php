@@ -1,0 +1,1 @@
+<?php $entryPage = 'advisor-logout'; require dirname(__DIR__) . '/app/page-entry.php';

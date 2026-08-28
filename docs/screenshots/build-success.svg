@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="520" viewBox="0 0 980 520" role="img" aria-labelledby="title desc">
+  <title id="title">Build success console screenshot</title>
+  <desc id="desc">Example Windows terminal output showing a successful build.bat run.</desc>
+  <rect width="980" height="520" fill="#13201a"/>
+  <rect x="28" y="28" width="924" height="464" rx="8" fill="#0c1411" stroke="#315341"/>
+  <text x="56" y="76" fill="#e7f7ee" font-family="Consolas, monospace" font-size="22">RMUTP Senior Project - Windows Build</text>
+  <text x="56" y="122" fill="#8be38b" font-family="Consolas, monospace" font-size="19">[OK] PHP 8.3.x</text>
+  <text x="56" y="156" fill="#8be38b" font-family="Consolas, monospace" font-size="19">[OK] Cache cleaned.</text>
+  <text x="56" y="190" fill="#8be38b" font-family="Consolas, monospace" font-size="19">[OK] Project structure verified.</text>
+  <text x="56" y="224" fill="#8be38b" font-family="Consolas, monospace" font-size="19">[OK] Config verified.</text>
+  <text x="56" y="258" fill="#8be38b" font-family="Consolas, monospace" font-size="19">[OK] Database connection verified.</text>
+  <text x="56" y="292" fill="#8be38b" font-family="Consolas, monospace" font-size="19">[OK] Upload folders are ready.</text>
+  <text x="56" y="326" fill="#8be38b" font-family="Consolas, monospace" font-size="19">[OK] PHP syntax verified.</text>
+  <text x="56" y="382" fill="#ffffff" font-family="Consolas, monospace" font-size="24">BUILD SUCCESS</text>
+  <text x="56" y="430" fill="#e7f7ee" font-family="Consolas, monospace" font-size="19">Project is ready to run with run.bat.</text>
+</svg>

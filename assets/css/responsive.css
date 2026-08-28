@@ -1,0 +1,146 @@
+@media (max-width: 1199.98px) {
+    .summary-grid,
+    .export-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .timeline-roadmap { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 991.98px) {
+    .sidebar {
+        transform: translateX(-100%);
+    }
+
+    .sidebar.show {
+        transform: translateX(0);
+    }
+
+    .app-main {
+        margin-left: 0;
+        width: 100%;
+        min-width: 0;
+    }
+
+    .top-navbar {
+        left: 0;
+    }
+
+    .content-area {
+        padding: 20px;
+    }
+
+    .page-heading {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .navbar-title div {
+        max-width: 48vw;
+    }
+}
+
+@media (max-width: 767.98px) {
+    .datatable td:last-child:has(.row-actions.document-actions) { min-width: 142px; }
+
+    .top-navbar {
+        padding: 0 14px;
+    }
+
+    .navbar-title img,
+    #logoutBtn span {
+        display: none;
+    }
+
+    .profile-chip {
+        padding-inline: 10px;
+        font-size: .8rem;
+    }
+
+    .content-area {
+        padding: 14px;
+    }
+
+    .clean-header {
+        align-items: flex-start;
+        padding: 14px;
+    }
+
+    .card {
+        border-radius: 7px;
+    }
+
+    .dataTables_wrapper {
+        padding: 12px;
+    }
+
+    .table-toolbar,
+    .table-footer {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .table-toolbar .dt-buttons {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .dataTables_wrapper .dt-button.export-btn {
+        justify-content: center;
+        padding-inline: 8px;
+    }
+
+    .dataTables_wrapper .dt-button.export-btn span { display: none; }
+    .table-toolbar .dataTables_filter input { width: 100%; }
+    .table-footer .dataTables_paginate { align-self: center; }
+
+    .summary-grid,
+    .summary-grid.compact,
+    .export-grid,
+    .detail-grid,
+    .status-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .page-actions,
+    .form-actions {
+        width: 100%;
+    }
+
+    .page-actions .btn,
+    .form-actions .btn {
+        flex: 1 1 auto;
+    }
+
+    .table-filter {
+        width: 100%;
+    }
+
+    .app-footer {
+        flex-direction: column;
+        padding: 16px;
+    }
+
+    .timeline-roadmap {
+        grid-template-columns: 1fr;
+        padding: 16px !important;
+    }
+
+    .timeline-roadmap .timeline-item {
+        align-items: flex-start;
+        flex-direction: column;
+        padding: 18px 16px 18px 68px;
+        gap: 12px;
+    }
+
+    .timeline-roadmap .timeline-item::before { left: 15px; }
+    .timeline-item-meta { justify-content: flex-start; }
+
+    .timeline-page-card { min-height: auto; }
+    .timeline-legend { display: none; }
+
+    .student-photo-upload {
+        align-items: stretch;
+        flex-direction: column;
+    }
+}

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="520" viewBox="0 0 980 520" role="img" aria-labelledby="title desc">
+  <title id="title">Run server screenshot</title>
+  <desc id="desc">Example terminal and browser address bar after run.bat starts the local PHP server.</desc>
+  <rect width="980" height="520" fill="#f4f7fb"/>
+  <rect x="40" y="44" width="900" height="120" rx="8" fill="#ffffff" stroke="#c9d5e2"/>
+  <circle cx="70" cy="76" r="9" fill="#e46962"/>
+  <circle cx="98" cy="76" r="9" fill="#e9bc4d"/>
+  <circle cx="126" cy="76" r="9" fill="#5abf7a"/>
+  <rect x="160" y="62" width="720" height="32" rx="16" fill="#eef3f8" stroke="#c9d5e2"/>
+  <text x="184" y="84" fill="#22313f" font-family="Segoe UI, Arial, sans-serif" font-size="18">http://localhost:8000</text>
+  <text x="66" y="132" fill="#22313f" font-family="Segoe UI, Arial, sans-serif" font-size="20">RMUTP Senior Project is ready.</text>
+  <rect x="40" y="206" width="900" height="260" rx="8" fill="#0b1117" stroke="#2d3b48"/>
+  <text x="68" y="254" fill="#d9e7f5" font-family="Consolas, monospace" font-size="22">RMUTP Senior Project - Local Server</text>
+  <text x="68" y="302" fill="#8be38b" font-family="Consolas, monospace" font-size="19">[OK] Starting PHP built-in server.</text>
+  <text x="68" y="336" fill="#ffffff" font-family="Consolas, monospace" font-size="19">URL: http://localhost:8000</text>
+  <text x="68" y="370" fill="#d9e7f5" font-family="Consolas, monospace" font-size="19">Press Ctrl+C to stop the server.</text>
+</svg>

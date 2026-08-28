@@ -1,0 +1,176 @@
+{
+    "advisor": {
+        "id": "ADV001",
+        "name": "ผศ.ดร.กิตติพงศ์ ใจดี",
+        "department": "เทคโนโลยีสารสนเทศ",
+        "email": "advisor@rmutp.ac.th",
+        "phone": "02-665-3777",
+        "photo": "assets\/img\/profile-advisor.svg"
+    },
+    "students": [
+        {
+            "id": "STU001",
+            "code": "66010001",
+            "name": "ณัฐวุฒิ แสงทอง",
+            "department": "เทคโนโลยีสารสนเทศ",
+            "email": "66010001@rmutp.ac.th",
+            "phone": "089-111-2222",
+            "photo": "assets\/img\/profile-student.svg",
+            "advisor_id": "ADV001"
+        },
+        {
+            "id": "STU002",
+            "code": "66010002",
+            "name": "ปริญญา วงศ์ชัย",
+            "department": "เทคโนโลยีสารสนเทศ",
+            "email": "66010002@rmutp.ac.th",
+            "phone": "089-333-4444",
+            "photo": "assets\/img\/profile-student.svg",
+            "advisor_id": "ADV001"
+        },
+        {
+            "id": "STU003",
+            "code": "66010003",
+            "name": "ศิริพร รัตนาวดี",
+            "department": "ระบบสารสนเทศ",
+            "email": "66010003@rmutp.ac.th",
+            "phone": "089-555-6666",
+            "photo": "assets\/img\/profile-student.svg",
+            "advisor_id": "ADV001"
+        }
+    ],
+    "projects": [
+        {
+            "id": "PRJ001",
+            "student_id": "STU001",
+            "code": "SP-2569-001",
+            "title": "ระบบติดตามโครงงานอาวุโสด้วยบาร์โค้ด",
+            "category": "Web Application",
+            "status": "Pending",
+            "progress": 65
+        },
+        {
+            "id": "PRJ002",
+            "student_id": "STU002",
+            "code": "SP-2569-002",
+            "title": "แดชบอร์ดวิเคราะห์ความคืบหน้านักศึกษา",
+            "category": "Data Dashboard",
+            "status": "Review",
+            "progress": 45
+        },
+        {
+            "id": "PRJ003",
+            "student_id": "STU003",
+            "code": "SP-2569-003",
+            "title": "ระบบแจ้งเตือนกำหนดส่งเอกสาร",
+            "category": "Notification System",
+            "status": "Approved",
+            "progress": 90
+        }
+    ],
+    "documents": [
+        {
+            "id": "DOC001",
+            "student_id": "STU001",
+            "project_id": "PRJ001",
+            "type": "proposal",
+            "title": "ข้อเสนอโครงงาน",
+            "filename": "sample-proposal.pdf",
+            "status": "Pending",
+            "uploaded_at": "2026-07-19 20:21:36",
+            "approved_at": ""
+        },
+        {
+            "id": "DOC002",
+            "student_id": "STU001",
+            "project_id": "PRJ001",
+            "type": "draft",
+            "title": "ฉบับร่าง",
+            "filename": "sample-draft.pdf",
+            "status": "Review",
+            "uploaded_at": "2026-07-20 20:21:36",
+            "approved_at": ""
+        },
+        {
+            "id": "DOC003",
+            "student_id": "STU002",
+            "project_id": "PRJ002",
+            "type": "proposal",
+            "title": "ข้อเสนอโครงงาน",
+            "filename": "sample-proposal.pdf",
+            "status": "Pending",
+            "uploaded_at": "2026-07-21 17:21:36",
+            "approved_at": ""
+        },
+        {
+            "id": "DOC004",
+            "student_id": "STU003",
+            "project_id": "PRJ003",
+            "type": "complete",
+            "title": "ฉบับสมบูรณ์",
+            "filename": "sample-complete.pdf",
+            "status": "Approved",
+            "uploaded_at": "2026-07-16 20:21:36",
+            "approved_at": "2026-07-21 20:21:36"
+        }
+    ],
+    "comments": [
+        {
+            "id": "CMT001",
+            "student_id": "STU001",
+            "document_id": "DOC001",
+            "author_id": "ADV001",
+            "author": "ผศ.ดร.กิตติพงศ์ ใจดี",
+            "message": "ควรเพิ่มขอบเขตการทดสอบระบบให้ชัดเจนขึ้น",
+            "created_at": "2026-07-20 20:21:36"
+        }
+    ],
+    "messages": [
+        {
+            "id": "MSG001",
+            "student_id": "STU001",
+            "sender": "ณัฐวุฒิ แสงทอง",
+            "receiver": "ผศ.ดร.กิตติพงศ์ ใจดี",
+            "subject": "ขอนัดปรึกษา",
+            "message": "ต้องการสอบถามเรื่องเอกสารข้อเสนอครับ",
+            "attachment": "",
+            "read": false,
+            "created_at": "2026-07-21 18:21:36"
+        }
+    ],
+    "notifications": [
+        {
+            "id": "NTF001",
+            "title": "มีเอกสารใหม่",
+            "message": "ณัฐวุฒิ อัปโหลดฉบับร่างใหม่",
+            "type": "Upload",
+            "read": false,
+            "created_at": "2026-07-21 20:01:36"
+        },
+        {
+            "id": "NTF002",
+            "title": "ข้อความจากนักศึกษา",
+            "message": "มีข้อความรออ่าน 1 รายการ",
+            "type": "Message",
+            "read": false,
+            "created_at": "2026-07-21 18:21:36"
+        }
+    ],
+    "calendar": [
+        {
+            "date": "2026-07-22",
+            "title": "นัดตรวจฉบับร่างกับ ณัฐวุฒิ",
+            "type": "ประชุม"
+        },
+        {
+            "date": "2026-07-24",
+            "title": "กำหนดส่งข้อเสนอโครงงาน",
+            "type": "กำหนดส่ง"
+        },
+        {
+            "date": "2026-07-28",
+            "title": "ประชุมติดตามความคืบหน้า",
+            "type": "นัดหมาย"
+        }
+    ]
+}

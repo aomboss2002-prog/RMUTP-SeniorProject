@@ -1,0 +1,36 @@
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Runtime data and user uploads
+uploads/**
+backups/**
+cache/**
+database/app-data.json
+
+# Keep optional directory placeholders
+!uploads/**/.gitkeep
+!backups/.gitkeep
+!cache/.gitkeep
+
+# Dependencies and generated output
+vendor/
+node_modules/
+coverage/
+dist/
+build/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+*.bak
+*.swp
+Thumbs.db
+Desktop.ini
+
+# IDE and operating-system metadata
+.idea/
+.vscode/
+.DS_Store

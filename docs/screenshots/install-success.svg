@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="520" viewBox="0 0 980 520" role="img" aria-labelledby="title desc">
+  <title id="title">Install success console screenshot</title>
+  <desc id="desc">Example Windows terminal output showing a successful install.bat run.</desc>
+  <rect width="980" height="520" fill="#101820"/>
+  <rect x="28" y="28" width="924" height="464" rx="8" fill="#0b1117" stroke="#2d3b48"/>
+  <text x="56" y="76" fill="#d9e7f5" font-family="Consolas, monospace" font-size="22">RMUTP Senior Project - Windows Installer</text>
+  <text x="56" y="122" fill="#8be38b" font-family="Consolas, monospace" font-size="19">[OK] PHP 8.3.x</text>
+  <text x="56" y="156" fill="#8be38b" font-family="Consolas, monospace" font-size="19">[OK] MySQL client: C:\xampp\mysql\bin\mysql.exe</text>
+  <text x="56" y="190" fill="#8be38b" font-family="Consolas, monospace" font-size="19">[OK] Created .env from .env.example.</text>
+  <text x="56" y="224" fill="#8be38b" font-family="Consolas, monospace" font-size="19">[OK] Generated JWT_SECRET.</text>
+  <text x="56" y="258" fill="#8be38b" font-family="Consolas, monospace" font-size="19">[OK] Database is ready.</text>
+  <text x="56" y="292" fill="#8be38b" font-family="Consolas, monospace" font-size="19">[OK] Database imported.</text>
+  <text x="56" y="326" fill="#8be38b" font-family="Consolas, monospace" font-size="19">[OK] Upload folders are ready.</text>
+  <text x="56" y="382" fill="#ffffff" font-family="Consolas, monospace" font-size="24">INSTALL SUCCESS</text>
+  <text x="56" y="430" fill="#d9e7f5" font-family="Consolas, monospace" font-size="19">You can now double click run.bat.</text>
+</svg>
