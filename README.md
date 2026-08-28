@@ -447,6 +447,79 @@ C:\xampp\mysql\bin\mysql.exe -u root rmutp_senior_project < backups\rmutp_senior
 
 RMUTP Senior Project Management System  
 พัฒนาสำหรับจัดการและติดตามโครงงานนักศึกษาอย่างเป็นระบบ
+
+## การอัปโหลดโค้ดและเผยแพร่เว็บไซต์
+
+โปรเจกต์แยกคำสั่งอัปโหลดไว้ 2 ไฟล์ เพื่อป้องกันการสับสนระหว่างการเก็บซอร์สโค้ดบน GitHub กับการเผยแพร่เว็บไซต์จริงบน Vercel
+
+| ไฟล์ | หน้าที่ |
+| --- | --- |
+| `git.bat` | เพิ่มไฟล์ที่เปลี่ยนแปลง สร้าง Commit และ Push ไปยัง GitHub สาขา `main` |
+| `wed.bat` | Deploy โค้ดในเครื่องขึ้น Vercel Production และตรวจสอบว่าเว็บไซต์ตอบสนองหลังเผยแพร่ |
+
+### อัปโหลดซอร์สโค้ดไปยัง GitHub
+
+เปิด PowerShell หรือ Command Prompt ที่โฟลเดอร์โปรเจกต์ แล้วระบุข้อความ Commit:
+
+```bat
+.\git.bat "ปรับปรุงระบบ"
+```
+
+หากไม่ระบุข้อความ ระบบจะสร้างข้อความ Commit พร้อมวันที่และเวลาให้อัตโนมัติ:
+
+```bat
+.\git.bat
+```
+
+Repository ที่กำหนดไว้ในสคริปต์คือ:
+
+```text
+https://github.com/aomboss2002-prog/RMUTP-SeniorProject.git
+```
+
+ตรวจสอบ Git, Branch, Remote และผู้สร้าง Commit โดยไม่ Stage หรือ Push ไฟล์:
+
+```bat
+.\git.bat --check --no-pause
+```
+
+### เผยแพร่เว็บไซต์ขึ้น Vercel
+
+ก่อนใช้งานครั้งแรก ต้องติดตั้ง Vercel CLI และเชื่อมโฟลเดอร์นี้กับ Vercel Project เรียบร้อยแล้ว:
+
+```bat
+npm install --save-dev vercel
+vercel link --scope boss-ec12
+```
+
+ตรวจสอบความพร้อมโดยไม่เริ่ม Deploy:
+
+```bat
+.\wed.bat --check --no-pause
+```
+
+เผยแพร่เว็บไซต์ขึ้น Production:
+
+```bat
+.\wed.bat
+```
+
+เผยแพร่เสร็จแล้วเปิดเว็บไซต์ใน Browser อัตโนมัติ:
+
+```bat
+.\wed.bat --open
+```
+
+`wed.bat` จะตรวจ Vercel CLI, การเชื่อม Project และ `.vercelignore` ก่อนอัปโหลด จากนั้น Deploy ไปยัง `https://rmutp-senior-project.vercel.app` และตรวจหน้า `/login.php` หลังเผยแพร่ สคริปต์นี้ไม่สร้าง Commit และไม่ Push ไปยัง GitHub
+
+ลำดับที่แนะนำเมื่อแก้ไขระบบเสร็จแล้วคือ:
+
+1. รัน `build.bat` หรือชุดทดสอบที่เกี่ยวข้อง
+2. รัน `git.bat "ข้อความอธิบายการแก้ไข"` เพื่อเก็บเวอร์ชันบน GitHub
+3. รัน `wed.bat` เพื่อเผยแพร่เวอร์ชันเดียวกันขึ้น Vercel
+
+> ห้ามนำ `.env`, รหัสผ่านฐานข้อมูล, Token หรือข้อมูลลับขึ้น GitHub/Vercel Deployment โดยตรง ให้บันทึกค่าของ Production ผ่าน Vercel Environment Variables เท่านั้น
+
 ## Deploy บน Vercel
 
 โปรเจกต์รองรับทั้ง XAMPP แบบเดิมและ Vercel โดยเลือกโหมดผ่าน Environment Variables การติดตั้งบน Vercel ต้องใช้ฐานข้อมูล MySQL/MariaDB ภายนอก และ Vercel Blob เนื่องจากดิสก์ของ Serverless Function ไม่ใช่พื้นที่จัดเก็บถาวร
@@ -477,7 +550,7 @@ ADMIN_EMAIL=admin@rmutp.ac.th
 ADMIN_PASSWORD=เปลี่ยนเป็นรหัสผ่านที่ปลอดภัย
 ```
 
-4. Deploy ผ่าน Vercel Dashboard หรือใช้คำสั่ง `vercel --prod`
+4. Deploy ผ่าน Vercel Dashboard หรือรัน `.\wed.bat` จากโฟลเดอร์โปรเจกต์
 5. เปิดหน้า `/login.php` แล้วทดสอบ Login, อัปโหลดรูป, อัปโหลด Proposal/Draft/Complete, Preview และ Download
 
 ไฟล์ PDF และรูปโปรไฟล์ในโหมด Vercel จะส่งตรงจาก Browser ไปยัง Private Blob Store ระบบ PHP จะออก Token แบบอายุสั้นและตรวจไฟล์ก่อนบันทึกข้อมูล จึงรองรับ PDF สูงสุด 20 MB โดยไม่เขียนไฟล์ลงดิสก์ถาวรของ Function การดาวน์โหลด Complete ยังคงสร้างสำเนา Watermark ชั่วคราวและลบทิ้งหลังส่งไฟล์เหมือนเดิม

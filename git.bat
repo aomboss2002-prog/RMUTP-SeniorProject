@@ -5,6 +5,14 @@ set "ROOT_DIR=%~dp0"
 set "REMOTE_URL=https://github.com/aomboss2002-prog/RMUTP-SeniorProject.git"
 set "BRANCH=main"
 set "COMMIT_MESSAGE=%*"
+set "CHECK_ONLY=0"
+set "NO_PAUSE=0"
+if /i "%~1"=="--check" (
+    set "CHECK_ONLY=1"
+    set "COMMIT_MESSAGE="
+)
+if /i "%~1"=="--no-pause" set "NO_PAUSE=1"
+if /i "%~2"=="--no-pause" set "NO_PAUSE=1"
 cd /d "%ROOT_DIR%"
 
 title RMUTP Senior Project ^| Git Publisher
@@ -18,38 +26,69 @@ echo Repository: %REMOTE_URL%
 echo Branch    : %BRANCH%
 echo.
 
-where git >nul 2>nul
+echo [STEP] Checking Git for Windows...
+where git.exe >nul 2>nul
 if errorlevel 1 (
     echo [ERROR] Git was not found.
     echo Install Git for Windows from https://git-scm.com/download/win
     goto fail
 )
 
-for /f "delims=" %%V in ('git --version') do echo [OK] %%V
+for /f "delims=" %%V in ('git.exe --version') do echo [OK] %%V
 
 if not exist ".git\HEAD" (
+    if "%CHECK_ONLY%"=="1" (
+        echo [ERROR] Git repository has not been initialized.
+        goto fail
+    )
     echo [STEP] Initializing Git repository...
-    git init
+    git.exe init
     if errorlevel 1 goto fail
 ) else (
     echo [OK] Existing Git repository detected.
 )
 
-echo [STEP] Configuring branch and remote...
-git branch -M "%BRANCH%"
+echo [STEP] Checking branch and remote...
+set "CURRENT_BRANCH="
+for /f "delims=" %%B in ('git.exe branch --show-current 2^>nul') do set "CURRENT_BRANCH=%%B"
+if /i "%CURRENT_BRANCH%"=="%BRANCH%" goto branch_ready
+if "%CHECK_ONLY%"=="1" (
+    echo [ERROR] Current branch is "%CURRENT_BRANCH%", expected "%BRANCH%".
+    goto fail
+)
+git.exe branch -M "%BRANCH%"
 if errorlevel 1 goto fail
 
-git remote get-url origin >nul 2>nul
-if errorlevel 1 (
-    git remote add origin "%REMOTE_URL%"
-) else (
-    git remote set-url origin "%REMOTE_URL%"
+:branch_ready
+echo [OK] Branch = %BRANCH%
+
+set "CURRENT_REMOTE="
+for /f "delims=" %%R in ('git.exe remote get-url origin 2^>nul') do set "CURRENT_REMOTE=%%R"
+if not defined CURRENT_REMOTE goto add_remote
+if /i "%CURRENT_REMOTE%"=="%REMOTE_URL%" goto remote_ready
+if "%CHECK_ONLY%"=="1" (
+    echo [ERROR] origin does not match the configured GitHub repository.
+    echo Current : %CURRENT_REMOTE%
+    echo Expected: %REMOTE_URL%
+    goto fail
 )
+git.exe remote set-url origin "%REMOTE_URL%"
 if errorlevel 1 goto fail
+goto remote_ready
+
+:add_remote
+if "%CHECK_ONLY%"=="1" (
+    echo [ERROR] Git remote "origin" is not configured.
+    goto fail
+)
+git.exe remote add origin "%REMOTE_URL%"
+if errorlevel 1 goto fail
+
+:remote_ready
 echo [OK] origin = %REMOTE_URL%
 
-for /f "delims=" %%N in ('git config user.name 2^>nul') do set "GIT_USER_NAME=%%N"
-for /f "delims=" %%E in ('git config user.email 2^>nul') do set "GIT_USER_EMAIL=%%E"
+for /f "delims=" %%N in ('git.exe config user.name 2^>nul') do set "GIT_USER_NAME=%%N"
+for /f "delims=" %%E in ('git.exe config user.email 2^>nul') do set "GIT_USER_EMAIL=%%E"
 if not defined GIT_USER_NAME (
     echo.
     echo [ERROR] Git user.name is not configured.
@@ -64,11 +103,18 @@ if not defined GIT_USER_EMAIL (
 )
 echo [OK] Commit author: %GIT_USER_NAME% ^<%GIT_USER_EMAIL%^>
 
+if "%CHECK_ONLY%"=="1" (
+    echo.
+    echo [OK] GitHub publisher check completed. No files were staged or pushed.
+    if "%NO_PAUSE%"=="0" pause
+    exit /b 0
+)
+
 echo [STEP] Staging project files...
-git add -A
+git.exe add -A
 if errorlevel 1 goto fail
 
-git diff --cached --quiet
+git.exe diff --cached --quiet
 if errorlevel 1 goto create_commit
 
 echo [INFO] No new file changes to commit.
@@ -82,14 +128,14 @@ set "COMMIT_MESSAGE=Update RMUTP Senior Project %NOW%"
 :commit_ready
 echo [STEP] Creating commit...
 echo [INFO] %COMMIT_MESSAGE%
-git commit -m "%COMMIT_MESSAGE%"
+git.exe commit -m "%COMMIT_MESSAGE%"
 if errorlevel 1 goto fail
 echo [OK] Commit created.
 
 :push_changes
 echo [STEP] Pushing to GitHub...
 echo [INFO] Git Credential Manager may open a browser for GitHub sign-in.
-git push -u origin "%BRANCH%"
+git.exe push -u origin "%BRANCH%"
 if errorlevel 1 (
     echo.
     echo [ERROR] GitHub push failed.
@@ -105,7 +151,7 @@ echo ====================================================
 echo Repository: %REMOTE_URL%
 echo Branch    : %BRANCH%
 echo.
-pause
+if "%NO_PAUSE%"=="0" pause
 exit /b 0
 
 :fail
@@ -115,5 +161,5 @@ echo GITHUB PUBLISH FAILED
 echo ====================================================
 echo Read the error above and try again.
 echo.
-pause
+if "%NO_PAUSE%"=="0" pause
 exit /b 1
