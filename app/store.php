@@ -133,6 +133,37 @@ function ensure_primary_database_schema(PDO $pdo): void
     }
 }
 
+function normalize_database_collations(PDO $pdo): void
+{
+    $statement = $pdo->prepare(
+        "SELECT COUNT(*) FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND CHARACTER_SET_NAME IS NOT NULL
+           AND COLLATION_NAME <> 'utf8mb4_unicode_ci'"
+    );
+    $statement->execute();
+    if ((int) $statement->fetchColumn() === 0) {
+        return;
+    }
+
+    $tables = $pdo->query(
+        "SELECT TABLE_NAME FROM information_schema.TABLES
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE'"
+    )->fetchAll(PDO::FETCH_COLUMN);
+
+    $pdo->exec('SET FOREIGN_KEY_CHECKS = 0');
+    try {
+        foreach ($tables as $table) {
+            if (!is_string($table) || !preg_match('/^[A-Za-z0-9_]+$/', $table)) {
+                continue;
+            }
+            $pdo->exec("ALTER TABLE `{$table}` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+        }
+    } finally {
+        $pdo->exec('SET FOREIGN_KEY_CHECKS = 1');
+    }
+}
+
 function database_connection(): PDO
 {
     static $pdo = null;
@@ -159,6 +190,7 @@ function database_connection(): PDO
     );
     $pdo->exec("SET time_zone = '+07:00'");
     ensure_primary_database_schema($pdo);
+    normalize_database_collations($pdo);
     $pdo->exec("CREATE TABLE IF NOT EXISTS advisors (
         id VARCHAR(20) PRIMARY KEY,
         name VARCHAR(160) NOT NULL,
