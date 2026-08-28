@@ -91,10 +91,11 @@ if "%CHECK_ONLY%"=="1" (
 
 echo [4/5] Uploading the website to Vercel...
 echo [INFO] Compressing source files before upload to reduce transfer time.
-echo [INFO] Build logs will appear below. A normal deployment takes about 15-60 seconds.
+echo [INFO] Vercel will report the deployment URL when publishing is complete.
+echo [INFO] A normal deployment takes about 15-60 seconds.
 echo.
 for /f %%T in ('powershell -NoProfile -Command "[DateTimeOffset]::UtcNow.ToUnixTimeSeconds()"') do set "DEPLOY_STARTED=%%T"
-call "!VERCEL_CMD!" deploy --prod --yes --non-interactive --archive=tgz --logs --no-color --scope "%VERCEL_SCOPE%"
+call "!VERCEL_CMD!" deploy --prod --yes --non-interactive --archive=tgz --no-color --scope "%VERCEL_SCOPE%"
 if errorlevel 1 (
     echo.
     echo [ERROR] Vercel deployment failed.
