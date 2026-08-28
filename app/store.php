@@ -103,6 +103,36 @@ function ensure_database_foreign_key(
                 ON UPDATE CASCADE ON DELETE {$onDelete}");
 }
 
+function ensure_primary_database_schema(PDO $pdo): void
+{
+    $requiredTables = ['students', 'projects', 'documents', 'notifications', 'activities', 'comments', 'approvals', 'settings'];
+    $placeholders = implode(',', array_fill(0, count($requiredTables), '?'));
+    $statement = $pdo->prepare(
+        "SELECT COUNT(*) FROM information_schema.TABLES
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ({$placeholders})"
+    );
+    $statement->execute($requiredTables);
+    if ((int) $statement->fetchColumn() === count($requiredTables)) {
+        return;
+    }
+
+    $schemaPath = __DIR__ . '/../database/database.sql';
+    $schema = is_file($schemaPath) ? file_get_contents($schemaPath) : false;
+    if (!is_string($schema) || $schema === '') {
+        throw new RuntimeException('Database schema file is missing.');
+    }
+
+    // Run only CREATE TABLE statements in the database selected by DB_NAME /
+    // DB_DATABASE. CREATE DATABASE, USE and seed INSERT statements must never
+    // redirect a hosted connection to a different database.
+    if (!preg_match_all('/CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+.*?;/is', $schema, $matches)) {
+        throw new RuntimeException('Database schema does not contain table definitions.');
+    }
+    foreach ($matches[0] as $createTableSql) {
+        $pdo->exec($createTableSql);
+    }
+}
+
 function database_connection(): PDO
 {
     static $pdo = null;
@@ -112,9 +142,11 @@ function database_connection(): PDO
     $config = env_config();
     $host = $config['DB_HOST'] ?? 'localhost';
     $port = (int) ($config['DB_PORT'] ?? 3306);
-    $database = $config['DB_DATABASE'] ?? 'rmutp_senior_project';
-    $username = $config['DB_USERNAME'] ?? 'root';
-    $password = $config['DB_PASSWORD'] ?? '';
+    // Support both the local/XAMPP variable names and the shorter aliases
+    // commonly configured on Vercel/Railway.
+    $database = $config['DB_DATABASE'] ?? $config['DB_NAME'] ?? 'rmutp_senior_project';
+    $username = $config['DB_USERNAME'] ?? $config['DB_USER'] ?? 'root';
+    $password = $config['DB_PASSWORD'] ?? $config['DB_PASS'] ?? '';
     $pdo = new PDO(
         "mysql:host={$host};port={$port};dbname={$database};charset=utf8mb4",
         $username,
@@ -126,6 +158,7 @@ function database_connection(): PDO
         ]
     );
     $pdo->exec("SET time_zone = '+07:00'");
+    ensure_primary_database_schema($pdo);
     $pdo->exec("CREATE TABLE IF NOT EXISTS advisors (
         id VARCHAR(20) PRIMARY KEY,
         name VARCHAR(160) NOT NULL,
