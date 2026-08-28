@@ -172,49 +172,10 @@ function advisor_audit(string $action, string $entityType, string $entityId, arr
 
 function shared_database_connection(): PDO
 {
-    static $pdo = null;
-    if ($pdo instanceof PDO) {
-        return $pdo;
-    }
-    $config = [];
-    foreach (is_file(__DIR__ . '/../.env') ? file(__DIR__ . '/../.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) : [] as $line) {
-        if (!str_contains($line, '=') || str_starts_with(trim($line), '#')) {
-            continue;
-        }
-        [$key, $value] = array_map('trim', explode('=', $line, 2));
-        $config[$key] = trim($value, "\"'");
-    }
-    foreach (getenv() ?: [] as $key => $value) {
-        if (is_string($key) && is_scalar($value)) $config[$key] = (string) $value;
-    }
-    $pdo = new PDO(
-        'mysql:host=' . ($config['DB_HOST'] ?? 'localhost') . ';port=' . (int) ($config['DB_PORT'] ?? 3306) . ';dbname=' . ($config['DB_DATABASE'] ?? $config['DB_NAME'] ?? 'rmutp_senior_project') . ';charset=utf8mb4',
-        $config['DB_USERNAME'] ?? $config['DB_USER'] ?? 'root',
-        $config['DB_PASSWORD'] ?? $config['DB_PASS'] ?? '',
-        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
-    );
-    $pdo->exec("SET time_zone = '+07:00'");
-    $autoMigrateValue = $config['DB_AUTO_MIGRATE'] ?? null;
-    $hostedRuntime = strtolower((string) ($config['APP_ENV'] ?? '')) === 'production'
-        || getenv('VERCEL') !== false;
-    $autoMigrate = $autoMigrateValue === null
-        ? !$hostedRuntime
-        : filter_var($autoMigrateValue, FILTER_VALIDATE_BOOLEAN);
-    if ($autoMigrate) {
-        $pdo->exec("CREATE TABLE IF NOT EXISTS app_state (
-            state_key VARCHAR(40) PRIMARY KEY,
-            state_json LONGTEXT NOT NULL,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-        ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-        $pdo->exec("CREATE TABLE IF NOT EXISTS php_sessions (
-            session_id VARCHAR(128) PRIMARY KEY,
-            session_data LONGTEXT NOT NULL,
-            expires_at DATETIME NOT NULL,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            INDEX idx_php_sessions_expires (expires_at)
-        ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-    }
-    return $pdo;
+    // session.php already loads the canonical store connection. Reusing it is
+    // important on serverless hosts: opening a second remote MySQL connection
+    // in the same request can add another full TCP/TLS handshake.
+    return database_connection();
 }
 
 function sync_shared_advisor_links(array $appData): void
@@ -338,6 +299,62 @@ function advisor_students(array $data): array
             'complete' => stage_status($docs, 'complete'),
         ]);
     }, array_values(array_filter($data['students'], fn($student) => $student['advisor_id'] === $data['advisor']['id'])));
+}
+
+function advisor_stage_rows(array $data, string $advisorId, string $stage): array
+{
+    if (!in_array($stage, ['proposal', 'draft', 'complete'], true)) {
+        return [];
+    }
+
+    $studentsById = [];
+    foreach ($data['students'] ?? [] as $student) {
+        $studentsById[(string) ($student['id'] ?? '')] = $student;
+    }
+    $projectsById = [];
+    foreach ($data['projects'] ?? [] as $project) {
+        $projectsById[(string) ($project['id'] ?? '')] = $project;
+    }
+    $groupsById = [];
+    foreach ($data['groups'] ?? [] as $group) {
+        if (in_array($advisorId, array_values($group['advisor_roles'] ?? []), true)) {
+            $groupsById[(string) ($group['id'] ?? '')] = $group;
+        }
+    }
+
+    $rows = [];
+    foreach ($data['documents'] ?? [] as $document) {
+        if (($document['type'] ?? '') !== $stage) {
+            continue;
+        }
+
+        $groupId = (string) ($document['group_id'] ?? '');
+        $group = $groupId !== '' ? ($groupsById[$groupId] ?? null) : null;
+        $student = $studentsById[(string) ($document['student_id'] ?? '')] ?? null;
+        $hasStandaloneAccess = $groupId === ''
+            && $student
+            && in_array($advisorId, array_values($student['advisor_roles'] ?? []), true);
+        if (!$group && !$hasStandaloneAccess) {
+            continue;
+        }
+
+        $leaderId = (string) ($group['leader_id'] ?? $document['student_id'] ?? '');
+        $leader = $studentsById[$leaderId] ?? $student ?? [];
+        $projectId = (string) ($group['project_id'] ?? $document['project_id'] ?? $leader['project_id'] ?? '');
+        $project = $projectsById[$projectId] ?? [];
+        $leader['name'] = trim((string) ($leader['first_name'] ?? '') . ' ' . (string) ($leader['last_name'] ?? ''));
+        $leader['department'] = $leader['major'] ?? '';
+        $rows[] = [
+            'document' => $document,
+            'student' => $leader,
+            'project' => $project,
+        ];
+    }
+
+    usort($rows, static fn(array $left, array $right): int =>
+        strcmp((string) ($right['document']['uploaded_at'] ?? ''), (string) ($left['document']['uploaded_at'] ?? ''))
+    );
+    return $rows;
 }
 
 function student_group_id(array $data, string $studentId): string
@@ -606,6 +623,10 @@ if ($endpoint === 'dashboard') {
         if (in_array($advisorId, array_values($group['advisor_roles'] ?? []), true)) $groupIds[] = $group['id'] ?? '';
     }
     $docs = array_values(array_filter($appData['documents'] ?? [], static fn(array $doc): bool => in_array($doc['group_id'] ?? '', $groupIds, true)));
+    $unread = count(array_filter($advisorNotifications, static fn(array $row): bool =>
+        !in_array($advisorId, $row['read_by'] ?? [], true)
+        && empty($row['read'])
+    ));
     respond(['success' => true, 'data' => [
         'advisor' => $data['advisor'],
         'summary' => [
@@ -618,11 +639,17 @@ if ($endpoint === 'dashboard') {
         'students' => $students,
         'activities' => array_slice(array_merge($advisorNotifications, $advisorComments), 0, 6),
         'notifications' => array_slice($advisorNotifications, 0, 5),
+        'unread' => $unread,
     ]]);
 }
 
 if ($endpoint === 'students') {
     respond(['success' => true, 'data' => advisor_students($data)]);
+}
+
+if (preg_match('#^stage/(proposal|draft|complete)$#', $endpoint, $matches)) {
+    $advisorId = (string) ($_SESSION['advisor_user']['id'] ?? '');
+    respond(['success' => true, 'data' => advisor_stage_rows(shared_app_data(), $advisorId, $matches[1])]);
 }
 
 if (preg_match('#^student/([^/]+)$#', $endpoint, $matches)) {

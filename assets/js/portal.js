@@ -285,8 +285,9 @@
     }
 
     function loadDashboard() {
-        $.when(loadProject(), request('api/student/timeline/'), request('api/student/notifications/')).done(function (projectResponse, timelineResponse, notificationResponse) {
-            const data = projectResponse[0].data;
+        request('api/student/dashboard/').done(function (response) {
+            const dashboard = response.data;
+            const data = dashboard.project;
             const student = data.student;
             const project = data.project;
             $('#portalStudentPhoto').attr('src', App.url(`api/profile-photo.php?id=${encodeURIComponent(student.id)}`));
@@ -297,15 +298,15 @@
             $('#portalProgressText').text(`${data.progress}%`);
             $('#portalProgressBar').css('width', `${data.progress}%`).text(`${data.progress}%`);
             Object.keys(data.stages).forEach((key) => $(`[data-stage-status="${key}"]`).text(App.label(data.stages[key].status)));
-            renderTimeline('#portalTimeline', timelineResponse[0].data);
-            $('#portalAnnouncement').text(notificationResponse[0].announcement || '-');
-            $('#portalNotifications').html(notificationResponse[0].data.slice(0, 5).map((row) => `
+            renderTimeline('#portalTimeline', dashboard.timeline);
+            $('#portalAnnouncement').text(dashboard.announcement || '-');
+            $('#portalNotifications').html(dashboard.notifications.slice(0, 5).map((row) => `
                 <a class="list-group-item" href="${App.url('student/notifications.php')}">
                     <strong>${App.escapeHtml(row.title)}</strong>
                     <span class="d-block text-muted">${App.escapeHtml(row.message)}</span>
                 </a>
             `).join('') || '<div class="list-group-item text-muted">ยังไม่มีการแจ้งเตือน</div>');
-            updateCounter(notificationResponse[0].unread);
+            updateCounter(dashboard.unread);
         });
     }
 

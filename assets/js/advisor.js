@@ -108,8 +108,8 @@
             renderCharts(data.students);
             $('#advisorActivities').html(data.activities.map((row) => `<div class="list-group-item"><strong>${App.escapeHtml(row.title || row.author || 'กิจกรรม')}</strong><span class="d-block text-muted">${App.escapeHtml(row.message)}</span><small>${App.escapeHtml(row.created_at)}</small></div>`).join(''));
             renderNotifications('#advisorDashboardNotifications', data.notifications);
+            updateCounter(data.unread);
         });
-        request('notifications').done((response) => updateCounter(response.unread));
     }
 
     function loadStudents(target = '#advisorStudentsTable', forReports = false) {
@@ -189,31 +189,14 @@
 
     function loadStage() {
         const stage = $('#advisorStage').val();
-        request('students').done((response) => {
-            const jobs = response.data.map((student) => request(`student/${student.id}`));
-            $.when.apply($, jobs).done(function () {
-                const responses = jobs.length === 1 ? [arguments] : Array.from(arguments);
-                const rowsByDocument = new Map();
-                responses.forEach((result) => {
-                    const data = result[0].data;
-                    const leader = data.group
-                        ? (data.members || []).find((member) => member.id === data.group.leader_id) || data.student
-                        : data.student;
-                    data.documents.filter((doc) => doc.type === stage).forEach((doc) => {
-                        if (!rowsByDocument.has(doc.id)) {
-                            rowsByDocument.set(doc.id, { document: doc, student: leader, project: data.project });
-                        }
-                    });
-                });
-                const rows = Array.from(rowsByDocument.values());
-                rows.sort((a, b) => String(b.document.uploaded_at || '').localeCompare(String(a.document.uploaded_at || '')));
-                $('#advisorStageTable tbody').html(rows.map(({ document, student, project }) => `<tr>
-                    <td>${App.escapeHtml(student.code)}<span class="d-block text-muted">${App.escapeHtml(student.name)}</span></td>
-                    <td>${App.escapeHtml(project.title)}</td><td>${document.type === 'draft' ? `<strong>บทที่ ${Number(document.chapter || 0)}</strong><span class="d-block text-muted">${App.escapeHtml(document.filename)}</span>` : App.escapeHtml(document.filename)}</td><td>${App.badge(document.status)}</td><td>${App.escapeHtml(document.uploaded_at)}</td>
-                    <td class="text-end">${documentActions(document)}</td>
-                </tr>`).join(''));
-                App.enhanceTable('#advisorStageTable');
-            });
+        request(`stage/${stage}`).done((response) => {
+            const rows = response.data || [];
+            $('#advisorStageTable tbody').html(rows.map(({ document, student, project }) => `<tr>
+                <td>${App.escapeHtml(student.code)}<span class="d-block text-muted">${App.escapeHtml(student.name)}</span></td>
+                <td>${App.escapeHtml(project.title)}</td><td>${document.type === 'draft' ? `<strong>บทที่ ${Number(document.chapter || 0)}</strong><span class="d-block text-muted">${App.escapeHtml(document.filename)}</span>` : App.escapeHtml(document.filename)}</td><td>${App.badge(document.status)}</td><td>${App.escapeHtml(document.uploaded_at)}</td>
+                <td class="text-end">${documentActions(document)}</td>
+            </tr>`).join(''));
+            App.enhanceTable('#advisorStageTable');
         });
     }
 

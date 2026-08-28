@@ -331,6 +331,46 @@ function portal_timeline(array $context): array
     return $timeline;
 }
 
+function portal_project_payload(array $context): array
+{
+    $barcodeAvailable = barcode_is_available($context);
+    return [
+        'student' => $context['student'],
+        'group' => $context['group'],
+        'is_group_leader' => $context['group'] && ($context['group']['leader_id'] ?? '') === $context['studentId'],
+        'advisor' => $context['advisor'],
+        'project' => $context['project'],
+        'progress' => calculated_project_progress($context['documents']),
+        'stages' => [
+            'proposal' => stage_payload($context, 'proposal'),
+            'draft' => stage_payload($context, 'draft'),
+            'complete' => stage_payload($context, 'complete'),
+            'barcode' => [
+                'status' => $barcodeAvailable ? 'Completed' : 'Not Started',
+                'available' => $barcodeAvailable,
+                'code' => $barcodeAvailable ? ($context['project']['code'] ?? '') : '',
+            ],
+        ],
+        'comments' => $context['comments'],
+    ];
+}
+
+function portal_notification_payload(array $context): array
+{
+    $groupName = (string) ($context['group']['name'] ?? 'ส่วนตัว');
+    $notifications = array_map(static function (array $row) use ($context, $groupName): array {
+        $row['read'] = in_array($context['studentId'], $row['read_by'] ?? [], true)
+            || (!isset($row['read_by']) && !empty($row['read']));
+        $row['group_name'] = ($row['group_id'] ?? '') !== '' ? $groupName : 'ส่วนตัว';
+        return $row;
+    }, $context['notifications']);
+    return [
+        'data' => $notifications,
+        'unread' => count(array_filter($notifications, static fn(array $row): bool => empty($row['read']))),
+        'announcement' => 'Submission schedule is open for this semester.',
+    ];
+}
+
 function save_student_upload(array &$data, array $context, string $stage): void
 {
     $uploadPayload = student_payload();
@@ -934,6 +974,17 @@ if ($endpoint === 'profile') {
     }
 }
 
+if ($endpoint === 'dashboard') {
+    $notificationPayload = portal_notification_payload($context);
+    student_respond(['success' => true, 'data' => [
+        'project' => portal_project_payload($context),
+        'timeline' => portal_timeline($context),
+        'notifications' => $notificationPayload['data'],
+        'unread' => $notificationPayload['unread'],
+        'announcement' => $notificationPayload['announcement'],
+    ]]);
+}
+
 if ($endpoint === 'project') {
     if ($method === 'POST' || $method === 'PUT') {
         if ($context['group'] && ($context['group']['leader_id'] ?? '') !== $context['studentId']) {
@@ -996,25 +1047,7 @@ if ($endpoint === 'project') {
         unset($project);
         student_respond(['success' => false, 'message' => 'Project not found.'], 404);
     }
-    student_respond(['success' => true, 'data' => [
-        'student' => $context['student'],
-        'group' => $context['group'],
-        'is_group_leader' => $context['group'] && ($context['group']['leader_id'] ?? '') === $context['studentId'],
-        'advisor' => $context['advisor'],
-        'project' => $context['project'],
-        'progress' => calculated_project_progress($context['documents']),
-        'stages' => [
-            'proposal' => stage_payload($context, 'proposal'),
-            'draft' => stage_payload($context, 'draft'),
-            'complete' => stage_payload($context, 'complete'),
-            'barcode' => [
-                'status' => barcode_is_available($context) ? 'Completed' : 'Not Started',
-                'available' => barcode_is_available($context),
-                'code' => barcode_is_available($context) ? ($context['project']['code'] ?? '') : '',
-            ],
-        ],
-        'comments' => $context['comments'],
-    ]]);
+    student_respond(['success' => true, 'data' => portal_project_payload($context)]);
 }
 
 if ($endpoint === 'timeline') {
@@ -1032,14 +1065,8 @@ if ($endpoint === 'notifications') {
         save_data($data);
         student_respond(['success' => true, 'message' => 'Notifications marked as read.']);
     }
-    $groupName = (string) ($context['group']['name'] ?? 'ส่วนตัว');
-    $notifications = array_map(static function (array $row) use ($context, $groupName): array {
-        $row['read'] = in_array($context['studentId'], $row['read_by'] ?? [], true) || (!isset($row['read_by']) && !empty($row['read']));
-        $row['group_name'] = ($row['group_id'] ?? '') !== '' ? $groupName : 'ส่วนตัว';
-        return $row;
-    }, $context['notifications']);
-    $unread = count(array_filter($notifications, fn($row) => empty($row['read'])));
-    student_respond(['success' => true, 'data' => $notifications, 'unread' => $unread, 'announcement' => 'Submission schedule is open for this semester.']);
+    $notificationPayload = portal_notification_payload($context);
+    student_respond(['success' => true] + $notificationPayload);
 }
 
 if ($endpoint === 'messages') {
