@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../app/store.php';
 require_once __DIR__ . '/../app/session.php';
+require_once __DIR__ . '/../app/storage.php';
 start_app_session();
 
 header('Content-Type: application/json; charset=utf-8');
@@ -51,7 +52,13 @@ function uploaded_student_photo(string $studentId): ?string
         respond(['success' => false, 'message' => 'ไม่สามารถสร้างโฟลเดอร์รูปภาพได้'], 500);
     }
     $filename = $studentId . '-' . bin2hex(random_bytes(8)) . '.' . $extensions[$mime];
-    if (!move_uploaded_file((string) $file['tmp_name'], $targetDir . '/' . $filename)) {
+    if (storage_driver() === 'vercel_blob') {
+        try {
+            storage_put_uploaded_file((string) $file['tmp_name'], 'student', $filename, (string) $mime);
+        } catch (Throwable) {
+            respond(['success' => false, 'message' => 'Could not save profile picture'], 500);
+        }
+    } elseif (!move_uploaded_file((string) $file['tmp_name'], $targetDir . '/' . $filename)) {
         respond(['success' => false, 'message' => 'ไม่สามารถบันทึกรูปภาพได้'], 500);
     }
     return 'uploads/student/' . $filename;
@@ -440,7 +447,13 @@ if ($resource === 'upload' && $method === 'POST') {
     }
     $originalName = basename($_FILES['file']['name']);
     $target = $targetDir . '/' . bin2hex(random_bytes(24)) . '.pdf';
-    if (!move_uploaded_file($_FILES['file']['tmp_name'], $target)) {
+    if (storage_driver() === 'vercel_blob') {
+        try {
+            storage_put_uploaded_file($_FILES['file']['tmp_name'], $type, basename($target), 'application/pdf');
+        } catch (Throwable) {
+            respond(['success' => false, 'message' => 'Could not save uploaded file'], 500);
+        }
+    } elseif (!move_uploaded_file($_FILES['file']['tmp_name'], $target)) {
         respond(['success' => false, 'message' => 'Could not save uploaded file'], 500);
     }
     $document = [

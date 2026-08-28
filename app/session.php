@@ -2,6 +2,65 @@
 
 date_default_timezone_set('Asia/Bangkok');
 
+final class DatabaseSessionHandler implements SessionHandlerInterface
+{
+    private function connection(): PDO
+    {
+        if (function_exists('database_connection')) return database_connection();
+        if (function_exists('shared_database_connection')) return shared_database_connection();
+        throw new RuntimeException('A database connection is required for database sessions.');
+    }
+
+    public function open(string $path, string $name): bool { return true; }
+    public function close(): bool { return true; }
+
+    public function read(string $id): string|false
+    {
+        $statement = $this->connection()->prepare(
+            'SELECT session_data FROM php_sessions WHERE session_id = :id AND expires_at > NOW()'
+        );
+        $statement->execute(['id' => $id]);
+        $value = $statement->fetchColumn();
+        return $value === false ? '' : (string) $value;
+    }
+
+    public function write(string $id, string $data): bool
+    {
+        $lifetime = max(1800, (int) ini_get('session.gc_maxlifetime'));
+        return $this->connection()->prepare(
+            'INSERT INTO php_sessions (session_id, session_data, expires_at)
+             VALUES (:id, :data, :expires_at)
+             ON DUPLICATE KEY UPDATE session_data = VALUES(session_data), expires_at = VALUES(expires_at)'
+        )->execute([
+            'id' => $id,
+            'data' => $data,
+            'expires_at' => date('Y-m-d H:i:s', time() + $lifetime),
+        ]);
+    }
+
+    public function destroy(string $id): bool
+    {
+        return $this->connection()->prepare('DELETE FROM php_sessions WHERE session_id = :id')
+            ->execute(['id' => $id]);
+    }
+
+    public function gc(int $max_lifetime): int|false
+    {
+        $statement = $this->connection()->prepare('DELETE FROM php_sessions WHERE expires_at <= NOW()');
+        $statement->execute();
+        return $statement->rowCount();
+    }
+}
+
+function configured_session_driver(): string
+{
+    $driver = getenv('SESSION_DRIVER');
+    if ((!is_string($driver) || $driver === '') && function_exists('env_config')) {
+        $driver = env_config()['SESSION_DRIVER'] ?? '';
+    }
+    return strtolower(trim((string) $driver));
+}
+
 function secure_password_hash(string $password): string
 {
     $iterations = 210000;
@@ -28,9 +87,13 @@ function secure_password_verify(string $password, string $storedHash): bool
 function start_app_session(): void
 {
     if (session_status() === PHP_SESSION_ACTIVE) return;
-    $sessionPath = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'rmutp-seniorproject-sessions';
-    if (!is_dir($sessionPath)) mkdir($sessionPath, 0770, true);
-    session_save_path($sessionPath);
+    if (configured_session_driver() === 'database') {
+        session_set_save_handler(new DatabaseSessionHandler(), true);
+    } else {
+        $sessionPath = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'rmutp-seniorproject-sessions';
+        if (!is_dir($sessionPath)) mkdir($sessionPath, 0770, true);
+        session_save_path($sessionPath);
+    }
     session_set_cookie_params([
         'path' => '/', 'httponly' => true, 'samesite' => 'Lax',
         'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',

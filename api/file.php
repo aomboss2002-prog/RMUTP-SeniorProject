@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../app/store.php';
 require_once __DIR__ . '/../app/session.php';
+require_once __DIR__ . '/../app/storage.php';
 require_once __DIR__ . '/../app/pdf-watermark.php';
 require_once __DIR__ . '/../app/public-catalog.php';
 start_app_session();
@@ -55,11 +56,19 @@ if (!$allowed) {
 
 $stage = basename((string) ($document['type'] ?? ''));
 $filename = basename((string) ($document['filename'] ?? ''));
-$base = realpath(__DIR__ . '/../uploads');
-$path = realpath(__DIR__ . '/../uploads/' . $stage . '/' . $filename);
-if (!$base || !$path || !str_starts_with($path, $base . DIRECTORY_SEPARATOR) || !is_file($path)) {
+$sourceTemporary = false;
+try {
+    $storedFile = storage_materialize($stage, $filename);
+    $path = $storedFile['path'];
+    $sourceTemporary = $storedFile['temporary'];
+} catch (Throwable) {
     http_response_code(404);
     exit('File not found.');
+}
+if ($sourceTemporary) {
+    register_shutdown_function(static function () use ($path): void {
+        if (is_file($path)) @unlink($path);
+    });
 }
 
 header('Content-Type: application/pdf');
@@ -119,4 +128,7 @@ header('Expires: 0');
 readfile($servePath);
 if ($temporaryPath && is_file($temporaryPath)) {
     unlink($temporaryPath);
+}
+if ($sourceTemporary && is_file($path)) {
+    @unlink($path);
 }

@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../app/store.php';
 require_once __DIR__ . '/../app/session.php';
+require_once __DIR__ . '/../app/storage.php';
 start_app_session();
 
 header('Content-Type: application/json; charset=utf-8');
@@ -332,6 +333,7 @@ function portal_timeline(array $context): array
 
 function save_student_upload(array &$data, array $context, string $stage): void
 {
+    $uploadPayload = student_payload();
     if ($context['group'] && ($context['group']['leader_id'] ?? '') !== $context['studentId']) {
         student_respond(['success' => false, 'message' => 'Only the group leader can submit project documents.'], 403);
     }
@@ -354,7 +356,7 @@ function save_student_upload(array &$data, array $context, string $stage): void
     }
     $draftChapter = 0;
     if ($stage === 'draft') {
-        $draftChapter = (int) ($_POST['draft_chapter'] ?? 0);
+        $draftChapter = (int) ($uploadPayload['draft_chapter'] ?? 0);
         if ($draftChapter < 1 || $draftChapter > 5) {
             student_respond(['success' => false, 'message' => 'Please select Draft chapter 1-5.'], 422);
         }
@@ -373,20 +375,43 @@ function save_student_upload(array &$data, array $context, string $stage): void
             }
         }
     }
-    if (empty($_FILES['file'])) {
-        student_respond(['success' => false, 'message' => 'Please choose a PDF file.'], 422);
-    }
-    if ($_FILES['file']['size'] > 20 * 1024 * 1024) {
+    $blobPathname = trim((string) ($uploadPayload['blob_pathname'] ?? ''), '/');
+    $isBlobUpload = storage_driver() === 'vercel_blob' && $blobPathname !== '';
+    $originalName = basename((string) ($uploadPayload['original_name'] ?? ($_FILES['file']['name'] ?? '')));
+    $uploadSize = (int) ($uploadPayload['size'] ?? ($_FILES['file']['size'] ?? 0));
+    if ($uploadSize < 1 || $uploadSize > 20 * 1024 * 1024) {
         student_respond(['success' => false, 'message' => 'Maximum file size is 20 MB.'], 422);
     }
-    $extension = strtolower(pathinfo($_FILES['file']['name'], PATHINFO_EXTENSION));
-    $mimeType = (new finfo(FILEINFO_MIME_TYPE))->file($_FILES['file']['tmp_name']);
-    if ($extension !== 'pdf' || $mimeType !== 'application/pdf') {
-        student_respond(['success' => false, 'message' => 'PDF files only.'], 422);
-    }
-    $signature = file_get_contents($_FILES['file']['tmp_name'], false, null, 0, 5);
-    if ($signature !== '%PDF-') {
-        student_respond(['success' => false, 'message' => 'Invalid PDF file signature.'], 422);
+
+    $storedFilename = '';
+    $verificationPath = '';
+    $verificationTemporary = false;
+    try {
+        if ($isBlobUpload) {
+            $storedFilename = storage_accept_blob_reference($stage, $blobPathname);
+            $materialized = storage_materialize($stage, $storedFilename);
+            $verificationPath = $materialized['path'];
+            $verificationTemporary = $materialized['temporary'];
+        } elseif (!empty($_FILES['file']) && is_uploaded_file($_FILES['file']['tmp_name'])) {
+            $verificationPath = $_FILES['file']['tmp_name'];
+        } else {
+            student_respond(['success' => false, 'message' => 'Please choose a PDF file.'], 422);
+        }
+
+        $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+        $mimeType = (new finfo(FILEINFO_MIME_TYPE))->file($verificationPath);
+        $signature = file_get_contents($verificationPath, false, null, 0, 5);
+        if ($extension !== 'pdf' || $mimeType !== 'application/pdf' || $signature !== '%PDF-') {
+            student_respond(['success' => false, 'message' => 'Invalid PDF file.'], 422);
+        }
+        if (!$isBlobUpload) {
+            $storedFilename = bin2hex(random_bytes(24)) . '.pdf';
+            storage_put_uploaded_file($_FILES['file']['tmp_name'], $stage, $storedFilename, 'application/pdf');
+        }
+    } catch (Throwable $exception) {
+        student_respond(['success' => false, 'message' => $exception->getMessage()], 500);
+    } finally {
+        if ($verificationTemporary && $verificationPath !== '' && is_file($verificationPath)) @unlink($verificationPath);
     }
 
     $existingId = '';
@@ -408,17 +433,6 @@ function save_student_upload(array &$data, array $context, string $stage): void
         }
     }
 
-    $targetDir = __DIR__ . '/../uploads/' . $stage;
-    if (!is_dir($targetDir)) {
-        mkdir($targetDir, 0775, true);
-    }
-
-    $originalName = basename($_FILES['file']['name']);
-    $target = $targetDir . '/' . bin2hex(random_bytes(24)) . '.pdf';
-    if (!move_uploaded_file($_FILES['file']['tmp_name'], $target)) {
-        student_respond(['success' => false, 'message' => 'Could not save uploaded file.'], 500);
-    }
-
     $document = [
         'id' => $existingId ?: next_id($data['documents'], 'DOC'),
         'project_id' => $context['project']['id'] ?? '',
@@ -427,9 +441,9 @@ function save_student_upload(array &$data, array $context, string $stage): void
         'type' => $stage,
         'title' => $stage === 'draft' ? 'Draft Chapter ' . $draftChapter . ' PDF' : ucfirst($stage) . ' PDF',
         'chapter' => $draftChapter ?: null,
-        'filename' => basename($target),
+        'filename' => $storedFilename,
         'original_name' => $originalName,
-        'size' => round(filesize($target) / 1048576, 2) . ' MB',
+        'size' => round($uploadSize / 1048576, 2) . ' MB',
         'status' => $isResubmission ? 'Resubmitted' : 'Pending',
         'uploaded_at' => date('Y-m-d H:i:s'),
     ];
@@ -875,21 +889,34 @@ if ($endpoint === 'profile') {
                     }
                     unset($project);
                 }
-                if (!empty($_FILES['photo_file'])) {
+                $photoBlobPathname = trim((string) ($payload['photo_blob_pathname'] ?? ''), '/');
+                if (storage_driver() === 'vercel_blob' && $photoBlobPathname !== '') {
+                    try {
+                        $photoFilename = storage_accept_blob_reference('student', $photoBlobPathname);
+                        $materializedPhoto = storage_materialize('student', $photoFilename);
+                        $photoMime = (new finfo(FILEINFO_MIME_TYPE))->file($materializedPhoto['path']);
+                        if (!in_array($photoMime, ['image/jpeg', 'image/png', 'image/gif', 'image/webp'], true)) {
+                            throw new RuntimeException('Unsupported image type.');
+                        }
+                        if ($materializedPhoto['temporary'] && is_file($materializedPhoto['path'])) @unlink($materializedPhoto['path']);
+                        $student['photo'] = 'uploads/student/' . $photoFilename;
+                    } catch (Throwable $exception) {
+                        student_respond(['success' => false, 'message' => $exception->getMessage()], 422);
+                    }
+                } elseif (!empty($_FILES['photo_file'])) {
                     $extension = strtolower(pathinfo($_FILES['photo_file']['name'], PATHINFO_EXTENSION));
-                    if (!in_array($extension, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'], true)) {
+                    if (!in_array($extension, ['jpg', 'jpeg', 'png', 'gif', 'webp'], true)) {
                         student_respond(['success' => false, 'message' => 'Image files only.'], 422);
                     }
-                    $targetDir = __DIR__ . '/../uploads/student';
-                    if (!is_dir($targetDir)) {
-                        mkdir($targetDir, 0775, true);
-                    }
                     $safeName = preg_replace('/[^A-Za-z0-9._-]/', '-', basename($_FILES['photo_file']['name']));
-                    $target = $targetDir . '/' . $context['studentId'] . '-' . time() . '-' . $safeName;
-                    if (!move_uploaded_file($_FILES['photo_file']['tmp_name'], $target)) {
-                        student_respond(['success' => false, 'message' => 'Could not upload profile picture.'], 500);
+                    $storedName = $context['studentId'] . '-' . time() . '-' . $safeName;
+                    try {
+                        $mime = (new finfo(FILEINFO_MIME_TYPE))->file($_FILES['photo_file']['tmp_name']) ?: 'application/octet-stream';
+                        storage_put_uploaded_file($_FILES['photo_file']['tmp_name'], 'student', $storedName, $mime);
+                    } catch (Throwable $exception) {
+                        student_respond(['success' => false, 'message' => $exception->getMessage()], 500);
                     }
-                    $student['photo'] = 'uploads/student/' . basename($target);
+                    $student['photo'] = 'uploads/student/' . $storedName;
                 } elseif (isset($payload['photo'])) {
                     $student['photo'] = $payload['photo'];
                 }

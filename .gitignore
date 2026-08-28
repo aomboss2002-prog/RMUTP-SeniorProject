@@ -15,8 +15,9 @@ database/app-data.json
 !cache/.gitkeep
 
 # Dependencies and generated output
-vendor/
+/vendor/
 node_modules/
+.vercel/
 coverage/
 dist/
 build/

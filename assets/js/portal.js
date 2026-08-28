@@ -9,6 +9,22 @@
     let studentMessagePage = 1;
     const studentMessagesPerPage = 5;
 
+    function usesVercelBlob() {
+        return $('meta[name="storage-driver"]').attr('content') === 'vercel_blob';
+    }
+
+    function blobPath(namespace, extension) {
+        const prefix = ($('meta[name="blob-path-prefix"]').attr('content') || 'rmutp').replace(/^\/+|\/+$/g, '');
+        const id = (window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`).replace(/[^A-Za-z0-9-]/g, '');
+        return `${prefix}/${namespace}/${id}.${extension}`;
+    }
+
+    async function uploadToBlob(file, namespace, payload, onProgress) {
+        if (!window.RmutpBlobUpload) throw new Error('Cloud upload module is unavailable.');
+        const extension = (file.name.split('.').pop() || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        return window.RmutpBlobUpload({ file, pathname: blobPath(namespace, extension), payload, onProgress });
+    }
+
     function page() {
         return $('body').data('page');
     }
@@ -318,7 +334,7 @@
             $('#spPhoto').val(student.photo || '');
         });
 
-        $('#studentProfileForm').off('submit').on('submit', function (event) {
+        $('#studentProfileForm').off('submit').on('submit', async function (event) {
             event.preventDefault();
             const selectedAdvisorIds = $('.advisor-role-select:not(:disabled)').map(function () { return this.value; }).get();
             if (selectedAdvisorIds.length && (selectedAdvisorIds.some((id) => !id) || new Set(selectedAdvisorIds).size !== 3)) {
@@ -326,16 +342,23 @@
                 return;
             }
             const formData = new FormData(this);
-            request('api/student/profile/', {
-                method: 'POST',
-                data: formData,
-                processData: false,
-                contentType: false
-            }).done(function (response) {
+            try {
+                const photo = $('#spPhotoFile')[0]?.files?.[0];
+                if (usesVercelBlob() && photo) {
+                    if (photo.size > 5 * 1024 * 1024) throw new Error('Profile picture must not exceed 5 MB.');
+                    const blob = await uploadToBlob(photo, 'student', { kind: 'profile' });
+                    formData.delete('photo_file');
+                    formData.set('photo_blob_pathname', blob.pathname);
+                }
+                const response = await request('api/student/profile/', {
+                    method: 'POST', data: formData, processData: false, contentType: false
+                });
                 App.toast(response.message);
                 $('#studentProfilePhoto').attr('src', App.url(`api/profile-photo.php?id=${encodeURIComponent(studentId())}&v=${Date.now()}`));
                 loadProfile();
-            });
+            } catch (error) {
+                App.toast(error?.responseJSON?.message || error?.message || 'Unable to update profile.', 'error');
+            }
         });
     }
 
@@ -537,13 +560,38 @@
             bootstrap.Modal.getOrCreateInstance(document.getElementById('filePreviewModal')).show();
         });
 
-        $('#studentUploadForm').on('submit', function (event) {
+        $('#studentUploadForm').on('submit', async function (event) {
             event.preventDefault();
             const stage = $('#portalStage').val();
             const file = $file[0].files[0];
             if (!file) return App.toast('กรุณาเลือกไฟล์ PDF ก่อน', 'info');
             if (file.type !== 'application/pdf') return App.toast('อัปโหลดได้เฉพาะไฟล์ PDF เท่านั้น', 'error');
             if (file.size > 20 * 1024 * 1024) return App.toast('ขนาดไฟล์สูงสุด 20 MB', 'error');
+            if (usesVercelBlob()) {
+                try {
+                    const blob = await uploadToBlob(file, stage, { kind: 'document', stage }, function (progress) {
+                        const percent = Math.round(progress.percentage || 0);
+                        $('#studentUploadProgress').css('width', percent + '%').text(percent + '%');
+                    });
+                    const response = await request(`api/student/upload/${stage}/`, {
+                        method: 'POST', contentType: 'application/json',
+                        data: JSON.stringify({
+                            blob_pathname: blob.pathname, original_name: file.name,
+                            size: file.size, mime_type: file.type,
+                            draft_chapter: $('#studentDraftChapter').val() || 0
+                        })
+                    });
+                    App.toast(response.message);
+                    $('#studentUploadProgress').css('width', '0%').text('0%');
+                    hideInlinePdfPreview();
+                    $file.val('');
+                    loadStage();
+                } catch (error) {
+                    $('#studentUploadProgress').css('width', '0%').text('0%');
+                    App.toast(error?.responseJSON?.message || error?.message || 'Upload failed.', 'error');
+                }
+                return;
+            }
             const formData = new FormData(this);
             $.ajax({
                 url: App.url(`api/student/upload/${stage}/`),

@@ -170,6 +170,14 @@ CREATE TABLE IF NOT EXISTS user_sessions (
     INDEX idx_user_sessions_expires (expires_at)
 );
 
+CREATE TABLE IF NOT EXISTS php_sessions (
+    session_id VARCHAR(128) PRIMARY KEY,
+    session_data LONGTEXT NOT NULL,
+    expires_at DATETIME NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_php_sessions_expires (expires_at)
+);
+
 CREATE TABLE IF NOT EXISTS password_reset_tokens (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     user_type ENUM('admin', 'advisor', 'student') NOT NULL,

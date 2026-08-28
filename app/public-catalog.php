@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/storage.php';
+
 function public_is_complete_document(array $document): bool
 {
     return strtolower(trim((string) ($document['type'] ?? ''))) === 'complete'
@@ -29,12 +31,7 @@ function public_catalog_file_available(array $document): bool
 {
     $filename = basename((string) ($document['filename'] ?? ''));
     if ($filename === '') return false;
-    $uploadRoot = realpath(__DIR__ . '/../uploads');
-    $file = realpath(__DIR__ . '/../uploads/complete/' . $filename);
-    return $uploadRoot !== false
-        && $file !== false
-        && str_starts_with($file, $uploadRoot . DIRECTORY_SEPARATOR)
-        && is_file($file);
+    return storage_exists('complete', $filename);
 }
 
 function public_catalog_authors(array $document, array $project, array $groupsById, array $groupsByProject, array $studentsById): array

@@ -1,0 +1,13 @@
+{
+  "name": "rmutp-senior-project",
+  "private": true,
+  "scripts": {
+    "build:blob": "esbuild assets/js-src/vercel-blob-upload.js --bundle --minify --format=iife --outfile=assets/js/vercel-blob-upload.js"
+  },
+  "dependencies": {
+    "@vercel/blob": "2.8.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.9"
+  }
+}

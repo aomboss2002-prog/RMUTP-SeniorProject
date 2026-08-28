@@ -23,6 +23,11 @@ function env_config(): array
         [$key, $value] = array_map('trim', explode('=', $line, 2));
         $config[$key] = trim($value, "\"'");
     }
+    foreach (getenv() ?: [] as $key => $value) {
+        if (is_string($key) && is_scalar($value)) {
+            $config[$key] = (string) $value;
+        }
+    }
     return $config;
 }
 
@@ -198,6 +203,13 @@ function database_connection(): PDO
         expires_at DATETIME NOT NULL,
         INDEX idx_user_sessions_user (user_type, user_id),
         INDEX idx_user_sessions_expires (expires_at)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS php_sessions (
+        session_id VARCHAR(128) PRIMARY KEY,
+        session_data LONGTEXT NOT NULL,
+        expires_at DATETIME NOT NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_php_sessions_expires (expires_at)
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
     $pdo->exec("CREATE TABLE IF NOT EXISTS password_reset_tokens (
         id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,

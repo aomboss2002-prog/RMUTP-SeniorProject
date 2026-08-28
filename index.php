@@ -1,12 +1,9 @@
 ﻿<?php
-$sessionPath = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'rmutp-seniorproject-sessions';
-if (!is_dir($sessionPath)) { mkdir($sessionPath, 0777, true); }
-session_save_path($sessionPath);
-session_set_cookie_params(['path' => '/', 'httponly' => true, 'samesite' => 'Lax']);
-session_start();
-require_once __DIR__ . '/app/session.php';
-require_once __DIR__ . '/app/helpers.php';
 require_once __DIR__ . '/app/store.php';
+require_once __DIR__ . '/app/session.php';
+require_once __DIR__ . '/app/storage.php';
+require_once __DIR__ . '/app/helpers.php';
+start_app_session();
 
 if (!defined('APP_ROUTED_ENTRY')) {
     if (isset($_GET['page'])) {

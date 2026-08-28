@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../app/store.php';
 require_once __DIR__ . '/../app/session.php';
+require_once __DIR__ . '/../app/storage.php';
 start_app_session();
 
 $studentId = trim((string) ($_GET['id'] ?? ''));
@@ -47,14 +48,26 @@ if (!$allowed) {
 
 $relativePath = str_replace('\\', '/', (string) ($student['photo'] ?? ''));
 $isUploadedPhoto = str_starts_with($relativePath, 'uploads/student/');
-$candidate = $isUploadedPhoto
-    ? __DIR__ . '/../uploads/student/' . basename($relativePath)
-    : __DIR__ . '/../assets/img/profile-student.svg';
-$path = realpath($candidate);
-$expectedBase = realpath($isUploadedPhoto ? __DIR__ . '/../uploads/student' : __DIR__ . '/../assets/img');
-
-if (!$path || !$expectedBase || !str_starts_with($path, $expectedBase . DIRECTORY_SEPARATOR) || !is_file($path)) {
+$temporaryPhoto = false;
+if ($isUploadedPhoto) {
+    try {
+        $storedPhoto = storage_materialize('student', basename($relativePath));
+        $path = $storedPhoto['path'];
+        $temporaryPhoto = $storedPhoto['temporary'];
+        if ($temporaryPhoto) {
+            register_shutdown_function(static function () use ($path): void {
+                if (is_file($path)) @unlink($path);
+            });
+        }
+    } catch (Throwable) {
+        $path = false;
+    }
+} else {
     $path = realpath(__DIR__ . '/../assets/img/profile-student.svg');
+}
+if (!$path || !is_file($path)) {
+    $path = realpath(__DIR__ . '/../assets/img/profile-student.svg');
+    $temporaryPhoto = false;
 }
 if (!$path) {
     http_response_code(404);
@@ -73,3 +86,4 @@ header('Content-Length: ' . filesize($path));
 header('Cache-Control: private, max-age=300');
 header('X-Content-Type-Options: nosniff');
 readfile($path);
+if ($temporaryPhoto && is_file($path)) @unlink($path);

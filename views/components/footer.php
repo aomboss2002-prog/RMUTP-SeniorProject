@@ -19,6 +19,9 @@
 <script src="<?= e(versioned_asset_url('js/dashboard.js')) ?>"></script>
 <script src="<?= e(versioned_asset_url('js/student.js')) ?>"></script>
 <script src="<?= e(versioned_asset_url('js/notification.js')) ?>"></script>
+<?php if (function_exists('storage_driver') && storage_driver() === 'vercel_blob'): ?>
+<script src="<?= e(versioned_asset_url('js/vercel-blob-upload.js')) ?>"></script>
+<?php endif; ?>
 <script src="<?= e(versioned_asset_url('js/portal.js')) ?>"></script>
 <script src="<?= e(versioned_asset_url('js/advisor.js')) ?>"></script>
 

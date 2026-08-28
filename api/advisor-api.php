@@ -2,11 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__ . '/../app/session.php';
 
-$sessionPath = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'rmutp-seniorproject-sessions';
-if (!is_dir($sessionPath)) { mkdir($sessionPath, 0777, true); }
-session_save_path($sessionPath);
-session_set_cookie_params(['path' => '/', 'httponly' => true, 'samesite' => 'Lax']);
-session_start();
+start_app_session();
 header('Content-Type: application/json; charset=utf-8');
 
 const ADVISOR_DATA = __DIR__ . '/../data/advisor-data.json';
@@ -175,12 +171,15 @@ function shared_database_connection(): PDO
         return $pdo;
     }
     $config = [];
-    foreach (file(__DIR__ . '/../.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $line) {
+    foreach (is_file(__DIR__ . '/../.env') ? file(__DIR__ . '/../.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) : [] as $line) {
         if (!str_contains($line, '=') || str_starts_with(trim($line), '#')) {
             continue;
         }
         [$key, $value] = array_map('trim', explode('=', $line, 2));
         $config[$key] = trim($value, "\"'");
+    }
+    foreach (getenv() ?: [] as $key => $value) {
+        if (is_string($key) && is_scalar($value)) $config[$key] = (string) $value;
     }
     $pdo = new PDO(
         'mysql:host=' . ($config['DB_HOST'] ?? 'localhost') . ';port=' . (int) ($config['DB_PORT'] ?? 3306) . ';dbname=' . ($config['DB_DATABASE'] ?? 'rmutp_senior_project') . ';charset=utf8mb4',
@@ -193,6 +192,13 @@ function shared_database_connection(): PDO
         state_key VARCHAR(40) PRIMARY KEY,
         state_json LONGTEXT NOT NULL,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS php_sessions (
+        session_id VARCHAR(128) PRIMARY KEY,
+        session_data LONGTEXT NOT NULL,
+        expires_at DATETIME NOT NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_php_sessions_expires (expires_at)
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
     return $pdo;
 }

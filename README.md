@@ -447,3 +447,39 @@ C:\xampp\mysql\bin\mysql.exe -u root rmutp_senior_project < backups\rmutp_senior
 
 RMUTP Senior Project Management System  
 พัฒนาสำหรับจัดการและติดตามโครงงานนักศึกษาอย่างเป็นระบบ
+## Deploy บน Vercel
+
+โปรเจกต์รองรับทั้ง XAMPP แบบเดิมและ Vercel โดยเลือกโหมดผ่าน Environment Variables การติดตั้งบน Vercel ต้องใช้ฐานข้อมูล MySQL/MariaDB ภายนอก และ Vercel Blob เนื่องจากดิสก์ของ Serverless Function ไม่ใช่พื้นที่จัดเก็บถาวร
+
+1. Import `database/database.sql` เข้า Cloud MySQL แล้วเก็บค่า Host, Port, Database, Username และ Password
+2. สร้าง Private Blob Store ใน Vercel และเชื่อม Store เข้ากับ Project เพื่อให้ Vercel สร้าง `BLOB_READ_WRITE_TOKEN`
+3. Import GitHub repository เข้า Vercel และกำหนด Environment Variables ต่อไปนี้ทั้ง Production และ Preview ตามต้องการ
+
+```env
+APP_ENV=production
+APP_DEBUG=false
+APP_TIMEZONE=Asia/Bangkok
+APP_URL=https://ชื่อโปรเจกต์.vercel.app
+
+DB_HOST=cloud-mysql-host
+DB_PORT=3306
+DB_DATABASE=rmutp_senior_project
+DB_USERNAME=database-user
+DB_PASSWORD=database-password
+
+SESSION_DRIVER=database
+STORAGE_DRIVER=vercel_blob
+BLOB_READ_WRITE_TOKEN=vercel_blob_rw_xxx
+BLOB_PATH_PREFIX=rmutp
+
+JWT_SECRET=สุ่มเป็นข้อความยาวอย่างน้อย-32-ตัวอักษร
+ADMIN_EMAIL=admin@rmutp.ac.th
+ADMIN_PASSWORD=เปลี่ยนเป็นรหัสผ่านที่ปลอดภัย
+```
+
+4. Deploy ผ่าน Vercel Dashboard หรือใช้คำสั่ง `vercel --prod`
+5. เปิดหน้า `/login.php` แล้วทดสอบ Login, อัปโหลดรูป, อัปโหลด Proposal/Draft/Complete, Preview และ Download
+
+ไฟล์ PDF และรูปโปรไฟล์ในโหมด Vercel จะส่งตรงจาก Browser ไปยัง Private Blob Store ระบบ PHP จะออก Token แบบอายุสั้นและตรวจไฟล์ก่อนบันทึกข้อมูล จึงรองรับ PDF สูงสุด 20 MB โดยไม่เขียนไฟล์ลงดิสก์ถาวรของ Function การดาวน์โหลด Complete ยังคงสร้างสำเนา Watermark ชั่วคราวและลบทิ้งหลังส่งไฟล์เหมือนเดิม
+
+> ห้าม commit `.env`, `BLOB_READ_WRITE_TOKEN`, รหัสผ่านฐานข้อมูล หรือรหัสผ่านผู้ดูแลระบบลง Git
