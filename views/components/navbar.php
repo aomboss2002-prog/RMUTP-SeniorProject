@@ -15,7 +15,7 @@
             <span class="notification-counter" id="notificationCounter">0</span>
         </button>
         <a class="profile-chip" href="<?= e(route_url('profile')) ?>">
-            <span id="adminNavbarName">ผู้ดูแล</span>
+            <span id="adminNavbarName"><?= e((string) ($_SESSION['app_user']['name'] ?? 'ผู้ดูแล')) ?></span>
         </a>
         <button class="btn btn-outline-primary btn-sm" id="logoutBtn">
             <i class="fa-solid fa-arrow-right-from-bracket"></i>

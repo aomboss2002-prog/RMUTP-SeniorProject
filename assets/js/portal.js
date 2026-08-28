@@ -1,13 +1,14 @@
 (function ($) {
     'use strict';
 
-    const refreshMs = 12000;
+    const refreshMs = 30000;
     const advisorStatusRefreshMs = 30000;
     let projectCache = null;
     let uploadPreviewObjectUrl = null;
     let studentMessages = [];
     let studentMessagePage = 1;
     const studentMessagesPerPage = 5;
+    const pendingGetRequests = new Map();
 
     function usesVercelBlob() {
         return $('meta[name="storage-driver"]').attr('content') === 'vercel_blob';
@@ -42,14 +43,28 @@
     }
 
     function request(url, options = {}) {
-        return $.ajax(Object.assign({
+        const ajaxOptions = Object.assign({
             url: App.url(url),
             method: options.method || 'GET',
             dataType: 'json',
             headers: { 'X-CSRF-Token': $('meta[name="csrf-token"]').attr('content') || '' }
-        }, options)).fail(function (xhr) {
+        }, options);
+        const isGet = ajaxOptions.method.toUpperCase() === 'GET';
+        const requestKey = isGet ? `${ajaxOptions.url}|${JSON.stringify(ajaxOptions.data || null)}` : '';
+        if (isGet && pendingGetRequests.has(requestKey)) return pendingGetRequests.get(requestKey);
+        if (isGet) ajaxOptions.timeout = 30000;
+
+        const pending = $.ajax(ajaxOptions).fail(function (xhr, status) {
+            if (status === 'abort') return;
             App.toast(xhr.responseJSON?.message || 'ไม่สามารถเชื่อมต่อ Student API ได้', 'error');
         });
+        if (isGet) {
+            pendingGetRequests.set(requestKey, pending);
+            pending.always(function () {
+                if (pendingGetRequests.get(requestKey) === pending) pendingGetRequests.delete(requestKey);
+            });
+        }
+        return pending;
     }
 
     function statusClass(status) {

@@ -155,8 +155,8 @@
 </footer>
 
 <div class="app-loader" id="appLoader" aria-hidden="true"><div class="spinner-border text-light" role="status"><span class="visually-hidden">กำลังเข้าสู่ระบบ</span></div></div>
-<script defer src="<?= e(asset_url('vendor/jquery/jquery.min.js')) ?>"></script>
-<script defer src="<?= e(asset_url('vendor/sweetalert2/sweetalert2.all.min.js')) ?>"></script>
+<script defer src="<?= e(versioned_asset_url('vendor/jquery/jquery.min.js')) ?>"></script>
+<script defer src="<?= e(versioned_asset_url('vendor/sweetalert2/sweetalert2.all.min.js')) ?>"></script>
 <script defer src="<?= e(versioned_asset_url('js/app.js')) ?>"></script>
 <script defer src="<?= e(versioned_asset_url('js/public-catalog.js')) ?>"></script>
 </body>

@@ -196,6 +196,23 @@ require_csrf_token();
 if ($resource === 'dashboard') {
     $statuses = array_count_values(array_column($data['projects'], 'status'));
     $uploads = array_count_values(array_column($data['documents'], 'type'));
+    $dashboardStudents = array_map(static fn(array $student): array => [
+        'id' => $student['id'] ?? '',
+        'code' => $student['code'] ?? '',
+        'first_name' => $student['first_name'] ?? '',
+        'last_name' => $student['last_name'] ?? '',
+        'major' => $student['major'] ?? '',
+    ], $data['students']);
+    $dashboardStudentsById = collection_rows_by_id($data['students']);
+    $dashboardProjects = array_map(static function (array $project) use ($dashboardStudentsById): array {
+        $student = $dashboardStudentsById[(string) ($project['student_id'] ?? '')] ?? [];
+        return [
+            'id' => $project['id'] ?? '',
+            'code' => $project['code'] ?? '',
+            'title' => $project['title'] ?? '',
+            'student_name' => trim((string) ($student['first_name'] ?? '') . ' ' . (string) ($student['last_name'] ?? '')),
+        ];
+    }, $data['projects']);
     respond([
         'success' => true,
         'data' => [
@@ -211,8 +228,8 @@ if ($resource === 'dashboard') {
             'files' => array_slice($data['documents'], 0, 5),
             'notifications' => array_slice($data['notifications'], 0, 5),
             'approvals' => array_slice($data['approvals'], 0, 5),
-            'students' => $data['students'],
-            'projects' => array_map(fn($project) => enrich_project($project, $data), $data['projects']),
+            'students' => $dashboardStudents,
+            'projects' => $dashboardProjects,
         ],
     ]);
 }
@@ -476,6 +493,9 @@ if ($resource === 'upload' && $method === 'POST') {
 if ($resource === 'notifications') {
     if ($method === 'GET') {
         $unread = count(array_filter($data['notifications'], fn($row) => empty($row['read'])));
+        if (($_GET['summary'] ?? '') === '1') {
+            respond(['success' => true, 'data' => [], 'unread' => $unread]);
+        }
         respond(['success' => true, 'data' => $data['notifications'], 'unread' => $unread]);
     }
     if ($method === 'POST') {

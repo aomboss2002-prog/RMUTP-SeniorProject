@@ -4,6 +4,7 @@
     const BASE_URL = $('meta[name="app-base-url"]').attr('content') || '/';
     const API_URL = BASE_URL + 'api/admin/index.php';
     const state = { tables: {}, charts: {} };
+    const pendingGetRequests = new Map();
 
     function api(resource, options = {}) {
         const query = options.query || {};
@@ -25,10 +26,25 @@
             ajaxOptions.contentType = 'application/json';
         }
 
-        return $.ajax(ajaxOptions).fail(function (xhr) {
+        const isGet = ajaxOptions.method.toUpperCase() === 'GET';
+        const requestKey = isGet ? `${url}|${JSON.stringify(ajaxOptions.data || null)}` : '';
+        if (isGet && pendingGetRequests.has(requestKey)) {
+            return pendingGetRequests.get(requestKey);
+        }
+        if (isGet) ajaxOptions.timeout = 30000;
+
+        const request = $.ajax(ajaxOptions).fail(function (xhr, status) {
+            if (status === 'abort') return;
             const response = xhr.responseJSON || {};
             toast(response.message || 'ไม่สามารถเชื่อมต่อ API ได้', 'error');
         });
+        if (isGet) {
+            pendingGetRequests.set(requestKey, request);
+            request.always(function () {
+                if (pendingGetRequests.get(requestKey) === request) pendingGetRequests.delete(requestKey);
+            });
+        }
+        return request;
     }
 
     function url(path = '') {
@@ -350,11 +366,16 @@
     };
 
     $(function () {
+        let activeMutations = 0;
         $(document).ajaxSend(function (_event, _xhr, options) {
-            if ((options.type || 'GET').toUpperCase() !== 'GET') $('button[type="submit"]').prop('disabled', true);
+            if ((options.type || 'GET').toUpperCase() === 'GET') return;
+            activeMutations += 1;
+            $('button[type="submit"]').prop('disabled', true);
         });
-        $(document).ajaxComplete(function () {
-            $('button[type="submit"]').prop('disabled', false);
+        $(document).ajaxComplete(function (_event, _xhr, options) {
+            if ((options.type || 'GET').toUpperCase() === 'GET') return;
+            activeMutations = Math.max(0, activeMutations - 1);
+            $('button[type="submit"]').prop('disabled', activeMutations > 0);
         });
         initLayout();
         initGlobalActions();

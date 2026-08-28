@@ -1,11 +1,12 @@
 (function ($) {
     'use strict';
 
-    const refreshMs = 12000;
+    const refreshMs = 30000;
     const apiBase = App.url('advisor-api.php?endpoint=');
     let advisorMessages = [];
     let advisorMessagePage = 1;
     const advisorMessagesPerPage = 5;
+    const pendingGetRequests = new Map();
 
     function page() {
         return $('body').data('page');
@@ -16,7 +17,7 @@
     }
 
     function request(endpoint, options = {}) {
-        return $.ajax(Object.assign({
+        const ajaxOptions = Object.assign({
             url: apiBase + encodeURIComponent(endpoint),
             method: options.method || 'GET',
             dataType: 'json',
@@ -24,7 +25,23 @@
                 Authorization: 'Bearer ' + token(),
                 'X-CSRF-Token': $('meta[name="csrf-token"]').attr('content') || ''
             }
-        }, options)).fail((xhr) => App.toast(xhr.responseJSON?.message || 'เชื่อมต่อ Advisor API ไม่สำเร็จ', 'error'));
+        }, options);
+        const isGet = ajaxOptions.method.toUpperCase() === 'GET';
+        const requestKey = isGet ? `${ajaxOptions.url}|${JSON.stringify(ajaxOptions.data || null)}` : '';
+        if (isGet && pendingGetRequests.has(requestKey)) return pendingGetRequests.get(requestKey);
+        if (isGet) ajaxOptions.timeout = 30000;
+
+        const pending = $.ajax(ajaxOptions).fail((xhr, status) => {
+            if (status === 'abort') return;
+            App.toast(xhr.responseJSON?.message || 'เชื่อมต่อ Advisor API ไม่สำเร็จ', 'error');
+        });
+        if (isGet) {
+            pendingGetRequests.set(requestKey, pending);
+            pending.always(function () {
+                if (pendingGetRequests.get(requestKey) === pending) pendingGetRequests.delete(requestKey);
+            });
+        }
+        return pending;
     }
 
     function fileUrl(document) {

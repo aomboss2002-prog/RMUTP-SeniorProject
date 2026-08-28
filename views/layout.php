@@ -23,7 +23,9 @@
         <?php require __DIR__ . '/components/footer.php'; ?>
     </div>
 </div>
-<?php require __DIR__ . '/components/modal.php'; ?>
+<?php if (page_uses_bootstrap_javascript((string) ($page ?? ''))): ?>
+    <?php require __DIR__ . '/components/modal.php'; ?>
+<?php endif; ?>
 </body>
 </html>
 

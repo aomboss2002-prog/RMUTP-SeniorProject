@@ -2,9 +2,10 @@
     'use strict';
 
     function loadNotifications(showToast) {
-        App.api('notifications').done(function (response) {
+        const showDetails = $('body').data('page') === 'notifications';
+        App.api('notifications', { query: showDetails ? {} : { summary: 1 } }).done(function (response) {
             $('#notificationCounter').text(response.unread || 0).toggle(response.unread > 0);
-            if ($('body').data('page') === 'notifications') {
+            if (showDetails) {
                 $('#notificationsTable tbody').html(response.data.map((row) => `
                     <tr>
                         <td>${App.escapeHtml(row.title)}</td>
@@ -45,6 +46,6 @@
         loadNotifications(false);
         setInterval(() => {
             if (document.visibilityState === 'visible') loadNotifications(true);
-        }, 15000);
+        }, 30000);
     });
 })(jQuery);

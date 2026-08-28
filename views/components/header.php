@@ -10,13 +10,13 @@
     <meta name="blob-path-prefix" content="<?= e(function_exists('storage_blob_prefix') ? storage_blob_prefix() : 'rmutp') ?>">
     <title><?= e($meta['title'] ?? 'ระบบจัดการโครงงาน RMUTP') ?> | ระบบจัดการโครงงาน RMUTP</title>
     <link rel="icon" type="image/png" sizes="any" href="<?= e(asset_url('img/rmutp-logo.png')) ?>">
-    <link href="<?= e(asset_url('vendor/bootstrap/bootstrap.min.css')) ?>" rel="stylesheet">
+    <link href="<?= e(versioned_asset_url('vendor/bootstrap/bootstrap.min.css')) ?>" rel="stylesheet">
     <?php if (page_uses_datatables((string) ($page ?? ''))): ?>
-        <link href="<?= e(asset_url('vendor/datatables/dataTables.bootstrap5.min.css')) ?>" rel="stylesheet">
-        <link href="<?= e(asset_url('vendor/datatables/responsive.bootstrap5.min.css')) ?>" rel="stylesheet">
-        <link href="<?= e(asset_url('vendor/datatables/buttons.bootstrap5.min.css')) ?>" rel="stylesheet">
+        <link href="<?= e(versioned_asset_url('vendor/datatables/dataTables.bootstrap5.min.css')) ?>" rel="stylesheet">
+        <link href="<?= e(versioned_asset_url('vendor/datatables/responsive.bootstrap5.min.css')) ?>" rel="stylesheet">
+        <link href="<?= e(versioned_asset_url('vendor/datatables/buttons.bootstrap5.min.css')) ?>" rel="stylesheet">
     <?php endif; ?>
-    <link href="<?= e(asset_url('vendor/fontawesome/css/all.min.css')) ?>" rel="stylesheet">
+    <link href="<?= e(versioned_asset_url('vendor/fontawesome/css/all.min.css')) ?>" rel="stylesheet">
     <link href="<?= e(versioned_asset_url('css/theme.css')) ?>" rel="stylesheet">
     <link href="<?= e(versioned_asset_url('css/style.css')) ?>" rel="stylesheet">
     <link href="<?= e(versioned_asset_url('css/responsive.css')) ?>" rel="stylesheet">

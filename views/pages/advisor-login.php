@@ -16,9 +16,9 @@
         </form>
     </section>
 </main>
-<script defer src="<?= e(asset_url('vendor/jquery/jquery.min.js')) ?>"></script>
-<script defer src="<?= e(asset_url('vendor/sweetalert2/sweetalert2.all.min.js')) ?>"></script>
-<script defer src="<?= e(asset_url('js/app.js')) ?>"></script>
-<script defer src="<?= e(asset_url('js/advisor.js')) ?>"></script>
+<script defer src="<?= e(versioned_asset_url('vendor/jquery/jquery.min.js')) ?>"></script>
+<script defer src="<?= e(versioned_asset_url('vendor/sweetalert2/sweetalert2.all.min.js')) ?>"></script>
+<script defer src="<?= e(versioned_asset_url('js/app.js')) ?>"></script>
+<script defer src="<?= e(versioned_asset_url('js/advisor.js')) ?>"></script>
 </body>
 </html>

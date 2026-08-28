@@ -59,19 +59,46 @@ function asset_url(string $path): string
 
 function versioned_asset_url(string $path): string
 {
+    static $versions = [];
+
     $relativePath = ltrim($path, '/');
-    $file = __DIR__ . '/../assets/' . $relativePath;
-    $version = is_file($file) ? substr((string) sha1_file($file), 0, 12) : '1';
+    if (!isset($versions[$relativePath])) {
+        $file = __DIR__ . '/../assets/' . $relativePath;
+        $modifiedAt = is_file($file) ? filemtime($file) : false;
+        $fileSize = is_file($file) ? filesize($file) : false;
+        $versions[$relativePath] = ($modifiedAt !== false && $fileSize !== false)
+            ? dechex($modifiedAt) . '-' . dechex($fileSize)
+            : '1';
+    }
+    $version = $versions[$relativePath];
     return asset_url($relativePath) . '?v=' . rawurlencode($version);
+}
+
+function page_uses_admin_module(string $page): bool
+{
+    return in_array($page, [
+        'students', 'student-add', 'student-edit', 'student-detail', 'advisors',
+        'projects', 'documents', 'proposal', 'draft', 'complete', 'barcode',
+        'timeline', 'reports', 'import-excel', 'profile', 'settings',
+    ], true);
+}
+
+function page_uses_bootstrap_javascript(string $page): bool
+{
+    return in_array($page, [
+        'student-detail', 'advisors', 'documents', 'proposal', 'draft', 'complete',
+        'portal-proposal', 'portal-draft', 'portal-complete', 'portal-documents',
+        'advisor-student-detail', 'advisor-proposal', 'advisor-draft', 'advisor-complete',
+    ], true);
 }
 
 function page_uses_datatables(string $page): bool
 {
     return in_array($page, [
-        'dashboard', 'students', 'student-detail', 'advisors', 'projects',
+        'students', 'student-detail', 'advisors', 'projects',
         'documents', 'proposal', 'draft', 'complete', 'reports', 'notifications',
         'import-excel', 'portal-documents', 'portal-notifications',
-        'advisor-dashboard', 'advisor-students', 'advisor-proposal',
+        'advisor-students', 'advisor-proposal',
         'advisor-draft', 'advisor-complete', 'advisor-notifications',
         'advisor-reports',
     ], true);

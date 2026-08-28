@@ -307,5 +307,12 @@ for /R "api\student" %%P in (*.php) do (
         exit /b 1
     )
 )
+if exist "tests\resource-loading.php" (
+    call "%PHP_CMD%" "tests\resource-loading.php" >nul
+    if errorlevel 1 (
+        echo [Error] Page resource loading rules failed.
+        exit /b 1
+    )
+)
 echo !C_DIM!      PHP syntax is valid!C_RESET!
 exit /b 0
