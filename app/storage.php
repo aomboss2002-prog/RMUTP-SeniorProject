@@ -51,7 +51,7 @@ function storage_safe_filename(string $filename): string
 function storage_blob_prefix(): string
 {
     $prefix = trim((string) (storage_config()['BLOB_PATH_PREFIX'] ?? 'rmutp'), '/ ');
-    $prefix = preg_replace('/[^A-Za-z0-9/_-]+/', '-', $prefix) ?: 'rmutp';
+    $prefix = preg_replace('#[^A-Za-z0-9/_-]+#', '-', $prefix) ?: 'rmutp';
     return trim($prefix, '/');
 }
 
