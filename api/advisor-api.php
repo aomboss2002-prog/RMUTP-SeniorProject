@@ -182,24 +182,32 @@ function shared_database_connection(): PDO
         if (is_string($key) && is_scalar($value)) $config[$key] = (string) $value;
     }
     $pdo = new PDO(
-        'mysql:host=' . ($config['DB_HOST'] ?? 'localhost') . ';port=' . (int) ($config['DB_PORT'] ?? 3306) . ';dbname=' . ($config['DB_DATABASE'] ?? 'rmutp_senior_project') . ';charset=utf8mb4',
-        $config['DB_USERNAME'] ?? 'root',
-        $config['DB_PASSWORD'] ?? '',
+        'mysql:host=' . ($config['DB_HOST'] ?? 'localhost') . ';port=' . (int) ($config['DB_PORT'] ?? 3306) . ';dbname=' . ($config['DB_DATABASE'] ?? $config['DB_NAME'] ?? 'rmutp_senior_project') . ';charset=utf8mb4',
+        $config['DB_USERNAME'] ?? $config['DB_USER'] ?? 'root',
+        $config['DB_PASSWORD'] ?? $config['DB_PASS'] ?? '',
         [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
     );
     $pdo->exec("SET time_zone = '+07:00'");
-    $pdo->exec("CREATE TABLE IF NOT EXISTS app_state (
-        state_key VARCHAR(40) PRIMARY KEY,
-        state_json LONGTEXT NOT NULL,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-    $pdo->exec("CREATE TABLE IF NOT EXISTS php_sessions (
-        session_id VARCHAR(128) PRIMARY KEY,
-        session_data LONGTEXT NOT NULL,
-        expires_at DATETIME NOT NULL,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        INDEX idx_php_sessions_expires (expires_at)
-    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    $autoMigrateValue = $config['DB_AUTO_MIGRATE'] ?? null;
+    $hostedRuntime = strtolower((string) ($config['APP_ENV'] ?? '')) === 'production'
+        || getenv('VERCEL') !== false;
+    $autoMigrate = $autoMigrateValue === null
+        ? !$hostedRuntime
+        : filter_var($autoMigrateValue, FILTER_VALIDATE_BOOLEAN);
+    if ($autoMigrate) {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS app_state (
+            state_key VARCHAR(40) PRIMARY KEY,
+            state_json LONGTEXT NOT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS php_sessions (
+            session_id VARCHAR(128) PRIMARY KEY,
+            session_data LONGTEXT NOT NULL,
+            expires_at DATETIME NOT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_php_sessions_expires (expires_at)
+        ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    }
     return $pdo;
 }
 

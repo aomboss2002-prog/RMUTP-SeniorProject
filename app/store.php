@@ -239,6 +239,20 @@ function database_connection(): PDO
         ]
     );
     $pdo->exec("SET time_zone = '+07:00'");
+
+    // Local installations may bootstrap/migrate automatically. Hosted requests
+    // use an already imported schema, so avoid multiple information_schema and
+    // DDL round trips to a remote database on every serverless invocation.
+    $autoMigrateValue = $config['DB_AUTO_MIGRATE'] ?? null;
+    $hostedRuntime = strtolower((string) ($config['APP_ENV'] ?? '')) === 'production'
+        || getenv('VERCEL') !== false;
+    $autoMigrate = $autoMigrateValue === null
+        ? !$hostedRuntime
+        : filter_var($autoMigrateValue, FILTER_VALIDATE_BOOLEAN);
+    if (!$autoMigrate) {
+        return $pdo;
+    }
+
     $schemaVersion = '20260828_01_hosted_mysql';
     if (database_schema_is_current($pdo, $schemaVersion)) {
         return $pdo;

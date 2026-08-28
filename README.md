@@ -193,12 +193,15 @@ DB_PORT=3306
 DB_DATABASE=rmutp_senior_project
 DB_USERNAME=root
 DB_PASSWORD=
+DB_AUTO_MIGRATE=true
 
 JWT_SECRET=
 UPLOAD_PATH=uploads
 ADMIN_EMAIL=admin@rmutp.ac.th
 ADMIN_PASSWORD=admin123
 ```
+
+`DB_AUTO_MIGRATE=true` เหมาะสำหรับ XAMPP และเครื่องพัฒนา เพื่อให้ระบบตรวจและปรับ Schema อัตโนมัติ ส่วน Production ที่ Import `database/database.sql` เรียบร้อยแล้วควรกำหนดเป็น `false` เพื่อลดการตรวจ `information_schema` และคำสั่ง DDL ที่ฐานข้อมูลระยะไกลในทุก Request
 
 ถ้า XAMPP ไม่ได้ติดตั้งใน `C:\xampp` สามารถกำหนดตำแหน่งผ่านตัวแปร `XAMPP_HOME` ก่อนเรียกตัวติดตั้ง
 
@@ -539,6 +542,7 @@ DB_PORT=3306
 DB_DATABASE=rmutp_senior_project
 DB_USERNAME=database-user
 DB_PASSWORD=database-password
+DB_AUTO_MIGRATE=false
 
 SESSION_DRIVER=database
 STORAGE_DRIVER=vercel_blob

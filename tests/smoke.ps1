@@ -54,6 +54,16 @@ $adminEmail = if ($envValues.ADMIN_EMAIL) { $envValues.ADMIN_EMAIL } else { 'adm
 $adminPassword = if ($envValues.ADMIN_PASSWORD) { $envValues.ADMIN_PASSWORD } else { 'admin123' }
 $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
 $loginPage = Invoke-WebRequest -Uri ($base + '/login.php') -WebSession $session -UseBasicParsing
+$loginCacheControl = [string]$loginPage.Headers['Cache-Control']
+if ($loginCacheControl -notmatch 'public' -or $loginCacheControl -notmatch 's-maxage=60') {
+    throw 'Login page is missing the expected public edge cache policy'
+}
+if ([string]$loginPage.Headers['Set-Cookie'] -match 'PHPSESSID') {
+    throw 'Public login page unexpectedly started a PHP database session'
+}
+if ($loginPage.Content -match 'vendor/datatables/(dataTables|responsive|buttons)') {
+    throw 'Public login page unexpectedly loads DataTables assets'
+}
 $csrf = [regex]::Match($loginPage.Content, 'name="csrf-token" content="([^"]+)"').Groups[1].Value
 if ($csrf.Length -ne 64) { throw 'Login page did not provide a valid CSRF token' }
 $loginBody = @{ email = $adminEmail; password = $adminPassword } | ConvertTo-Json

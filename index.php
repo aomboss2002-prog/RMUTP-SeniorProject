@@ -3,7 +3,14 @@ require_once __DIR__ . '/app/store.php';
 require_once __DIR__ . '/app/session.php';
 require_once __DIR__ . '/app/storage.php';
 require_once __DIR__ . '/app/helpers.php';
-start_app_session();
+
+$requestedPage = $_GET['page'] ?? 'dashboard';
+$requestMethod = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+$isPublicLoginRequest = in_array($requestedPage, ['login', 'advisor-login'], true)
+    && in_array($requestMethod, ['GET', 'HEAD'], true);
+if (!$isPublicLoginRequest) {
+    start_app_session();
+}
 
 if (!defined('APP_ROUTED_ENTRY')) {
     if (isset($_GET['page'])) {
@@ -14,7 +21,6 @@ if (!defined('APP_ROUTED_ENTRY')) {
     exit;
 }
 
-$requestedPage = $_GET['page'] ?? 'dashboard';
 if ($requestedPage === 'advisor-logout') {
     unset(
         $_SESSION['app_user'],
