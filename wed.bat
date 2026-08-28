@@ -91,11 +91,11 @@ if "%CHECK_ONLY%"=="1" (
 
 echo [4/5] Uploading the website to Vercel...
 echo [INFO] Uploading only files allowed by .vercelignore.
-echo [INFO] Vercel will report the deployment URL when publishing is complete.
-echo [INFO] A normal deployment takes about 15-60 seconds.
+echo [INFO] Vercel will submit the Production deployment without waiting indefinitely.
+echo [INFO] The Vercel build normally finishes in about 12-15 seconds.
 echo.
 for /f %%T in ('powershell -NoProfile -Command "[DateTimeOffset]::UtcNow.ToUnixTimeSeconds()"') do set "DEPLOY_STARTED=%%T"
-call "!VERCEL_CMD!" deploy --prod --yes --non-interactive --no-color --scope "%VERCEL_SCOPE%"
+call "!VERCEL_CMD!" deploy --prod --yes --non-interactive --no-color --no-wait --scope "%VERCEL_SCOPE%"
 if errorlevel 1 (
     echo.
     echo [ERROR] Vercel deployment failed.
@@ -103,7 +103,7 @@ if errorlevel 1 (
 )
 for /f %%T in ('powershell -NoProfile -Command "[DateTimeOffset]::UtcNow.ToUnixTimeSeconds()"') do set "DEPLOY_FINISHED=%%T"
 set /a "DEPLOY_SECONDS=DEPLOY_FINISHED-DEPLOY_STARTED"
-echo [OK] Vercel deployment completed in !DEPLOY_SECONDS! seconds.
+echo [OK] Deployment was submitted in !DEPLOY_SECONDS! seconds.
 
 echo.
 echo [5/5] Checking the production website...
