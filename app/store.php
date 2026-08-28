@@ -69,38 +69,47 @@ function ensure_database_foreign_key(
     string $constraint,
     string $onDelete = 'RESTRICT'
 ): void {
-    $statement = $pdo->prepare(
+    $findForeignKey = static function () use ($pdo, $table, $column, $referencedTable): bool {
+        $statement = $pdo->prepare(
         'SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE
          WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name
            AND COLUMN_NAME = :column_name AND REFERENCED_TABLE_NAME = :referenced_table'
-    );
-    $statement->execute([
-        'table_name' => $table,
-        'column_name' => $column,
-        'referenced_table' => $referencedTable,
-    ]);
-    if ((int) $statement->fetchColumn() > 0) {
+        );
+        $statement->execute([
+            'table_name' => $table,
+            'column_name' => $column,
+            'referenced_table' => $referencedTable,
+        ]);
+        return (int) $statement->fetchColumn() > 0;
+    };
+    if ($findForeignKey()) {
         return;
     }
 
-    $nullableStatement = $pdo->prepare(
-        'SELECT IS_NULLABLE FROM information_schema.COLUMNS
-         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name AND COLUMN_NAME = :column_name'
+    $orphanStatement = $pdo->prepare(
+        "SELECT COUNT(*) FROM `{$table}` child
+         LEFT JOIN `{$referencedTable}` parent ON parent.id = child.`{$column}`
+         WHERE child.`{$column}` IS NOT NULL AND parent.id IS NULL"
     );
-    $nullableStatement->execute(['table_name' => $table, 'column_name' => $column]);
-    $isNullable = $nullableStatement->fetchColumn() === 'YES';
-    if ($isNullable) {
-        $pdo->exec("UPDATE `{$table}` child LEFT JOIN `{$referencedTable}` parent ON parent.id = child.`{$column}`
-                    SET child.`{$column}` = NULL
-                    WHERE child.`{$column}` IS NOT NULL AND parent.id IS NULL");
-    } else {
-        $pdo->exec("DELETE child FROM `{$table}` child LEFT JOIN `{$referencedTable}` parent ON parent.id = child.`{$column}`
-                    WHERE parent.id IS NULL");
+    $orphanStatement->execute();
+    if ((int) $orphanStatement->fetchColumn() > 0) {
+        throw new RuntimeException(
+            "Cannot add {$constraint}: {$table}.{$column} contains values missing from {$referencedTable}.id."
+        );
     }
 
-    $pdo->exec("ALTER TABLE `{$table}` ADD CONSTRAINT `{$constraint}`
-                FOREIGN KEY (`{$column}`) REFERENCES `{$referencedTable}` (`id`)
-                ON UPDATE CASCADE ON DELETE {$onDelete}");
+    try {
+        $pdo->exec("ALTER TABLE `{$table}` ADD CONSTRAINT `{$constraint}`
+                    FOREIGN KEY (`{$column}`) REFERENCES `{$referencedTable}` (`id`)
+                    ON UPDATE CASCADE ON DELETE {$onDelete}");
+    } catch (PDOException $error) {
+        // Serverless requests may initialize the same empty database at the
+        // same time. If another request won the race, the relation now exists.
+        if ($findForeignKey()) {
+            return;
+        }
+        throw $error;
+    }
 }
 
 function ensure_primary_database_schema(PDO $pdo): void
