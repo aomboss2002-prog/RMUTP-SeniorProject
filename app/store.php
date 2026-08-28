@@ -173,6 +173,47 @@ function normalize_database_collations(PDO $pdo): void
     }
 }
 
+function database_schema_is_current(PDO $pdo, string $version): bool
+{
+    $pdo->exec("CREATE TABLE IF NOT EXISTS schema_migrations (
+        version VARCHAR(80) PRIMARY KEY,
+        applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+
+    $statement = $pdo->prepare('SELECT COUNT(*) FROM schema_migrations WHERE version = :version');
+    $statement->execute(['version' => $version]);
+    if ((int) $statement->fetchColumn() > 0) {
+        return true;
+    }
+
+    // Older deployments may have completed the migration before the marker
+    // table existed. Detect that state once instead of repeating dozens of
+    // information_schema queries on every serverless request.
+    $relationCount = (int) $pdo->query(
+        "SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND REFERENCED_TABLE_NAME IS NOT NULL
+           AND TABLE_NAME IN (
+               'students', 'projects', 'project_groups', 'project_group_members',
+               'student_advisors', 'advisor_invitations', 'group_invitations',
+               'group_messages', 'documents', 'comments', 'approvals',
+               'notifications', 'notification_reads'
+           )"
+    )->fetchColumn();
+    if ($relationCount >= 32) {
+        $insert = $pdo->prepare('INSERT IGNORE INTO schema_migrations (version) VALUES (:version)');
+        $insert->execute(['version' => $version]);
+        return true;
+    }
+    return false;
+}
+
+function mark_database_schema_current(PDO $pdo, string $version): void
+{
+    $statement = $pdo->prepare('INSERT IGNORE INTO schema_migrations (version) VALUES (:version)');
+    $statement->execute(['version' => $version]);
+}
+
 function database_connection(): PDO
 {
     static $pdo = null;
@@ -198,6 +239,10 @@ function database_connection(): PDO
         ]
     );
     $pdo->exec("SET time_zone = '+07:00'");
+    $schemaVersion = '20260828_01_hosted_mysql';
+    if (database_schema_is_current($pdo, $schemaVersion)) {
+        return $pdo;
+    }
     ensure_primary_database_schema($pdo);
     normalize_database_collations($pdo);
     $pdo->exec("CREATE TABLE IF NOT EXISTS advisors (
@@ -397,6 +442,7 @@ function database_connection(): PDO
     ensure_database_foreign_key($pdo, 'notifications', 'student_id', 'students', 'fk_notifications_student', 'CASCADE');
     ensure_database_foreign_key($pdo, 'notifications', 'advisor_id', 'advisors', 'fk_notifications_advisor', 'CASCADE');
     ensure_database_foreign_key($pdo, 'notification_reads', 'notification_id', 'notifications', 'fk_notification_reads_notification', 'CASCADE');
+    mark_database_schema_current($pdo, $schemaVersion);
     return $pdo;
 }
 
