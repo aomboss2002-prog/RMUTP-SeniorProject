@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/app/store.php';
 require_once __DIR__ . '/app/session.php';
 require_once __DIR__ . '/app/storage.php';
@@ -31,6 +31,7 @@ if ($requestedPage === 'advisor-login') {
     header('Location: ' . route_url('login'));
     exit;
 }
+
 $pages = app_pages();
 $portalPages = [
     'portal-dashboard' => ['title' => 'แดชบอร์ดนักศึกษา', 'file' => 'portal-dashboard.php', 'icon' => 'fa-gauge-high'],
@@ -138,9 +139,5 @@ if (str_starts_with($page, 'advisor-') && $page !== 'advisor-login' && empty($_S
     header('Location: ' . route_url('login'));
     exit;
 }
+
 require __DIR__ . '/views/layout.php';
-
-
-
-
-

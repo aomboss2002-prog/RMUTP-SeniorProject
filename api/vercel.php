@@ -2,6 +2,10 @@
 declare(strict_types=1);
 
 // Single Vercel Function entry point. Static assets are excluded by vercel.json.
+if (!ob_get_level()) {
+    ob_start();
+}
+
 $root = dirname(__DIR__);
 $_SERVER['DOCUMENT_ROOT'] = $root;
 $_SERVER['HTTPS'] = 'on';
