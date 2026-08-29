@@ -56,15 +56,6 @@
         }
     }
 
-    const toggle = document.getElementById('toggleForgotPassword');
-    const panel = document.getElementById('loginForgotPasswordPanel');
-    toggle?.addEventListener('click', () => {
-        const willOpen = panel?.hidden ?? false;
-        if (panel) panel.hidden = !willOpen;
-        toggle.setAttribute('aria-expanded', String(willOpen));
-        if (willOpen) window.setTimeout(() => document.getElementById('loginResetEmail')?.focus(), 0);
-    });
-
     ['forgotPasswordForm', 'resetPasswordForm', 'loginForgotPasswordForm'].forEach((id) => {
         document.getElementById(id)?.addEventListener('submit', (event) => {
             event.preventDefault();

@@ -127,7 +127,7 @@
                             <input id="loginRemember" name="remember" type="checkbox" value="1">
                             <span>จดจำการเข้าสู่ระบบ</span>
                         </label>
-                        <button class="forgot-password-toggle" id="toggleForgotPassword" type="button" aria-expanded="false" aria-controls="loginForgotPasswordPanel">ลืมรหัสผ่าน?</button>
+                        <a href="#loginForgotPasswordPanel">ลืมรหัสผ่าน?</a>
                     </div>
                     <button class="public-login-submit" type="submit">
                         <span>เข้าสู่ระบบ</span>
@@ -135,12 +135,12 @@
                     </button>
                 </form>
 
-                <section class="login-forgot-panel" id="loginForgotPasswordPanel" aria-labelledby="loginForgotPasswordHeading" hidden>
+                <section class="login-forgot-panel" id="loginForgotPasswordPanel" aria-labelledby="loginForgotPasswordHeading">
                     <div class="login-forgot-panel__head">
                         <span class="login-forgot-panel__icon"><i class="fa-solid fa-key" aria-hidden="true"></i></span>
                         <div>
-                            <h3 id="loginForgotPasswordHeading">ตั้งรหัสผ่านใหม่</h3>
-                            <p>กรอกอีเมลของนักศึกษาหรืออาจารย์ ลิงก์จะใช้งานได้ 15 นาที</p>
+                            <h3 id="loginForgotPasswordHeading">ลืมรหัสผ่าน</h3>
+                            <p>กรอกอีเมลของนักศึกษาหรืออาจารย์ ระบบจะส่งลิงก์ตั้งรหัสผ่านใหม่ที่ใช้งานได้ 15 นาที</p>
                         </div>
                     </div>
                     <form id="loginForgotPasswordForm" class="login-forgot-form">
@@ -150,7 +150,7 @@
                             <i class="fa-regular fa-envelope" aria-hidden="true"></i>
                             <input id="loginResetEmail" name="email" type="email" autocomplete="email" required placeholder="name@rmutp.ac.th">
                         </div>
-                        <button class="login-forgot-submit" type="submit"><span>ส่งลิงก์ทางอีเมล</span><i class="fa-solid fa-paper-plane" aria-hidden="true"></i></button>
+                        <button class="login-forgot-submit" type="submit"><span>ส่งลิงก์ตั้งรหัสผ่านทางอีเมล</span><i class="fa-solid fa-paper-plane" aria-hidden="true"></i></button>
                     </form>
                     <div id="passwordResetMessage" class="password-recovery-message" role="status" aria-live="polite" hidden></div>
                     <a class="login-forgot-full-link" href="<?= e(route_url('forgot-password')) ?>">เปิดหน้าลืมรหัสผ่านแบบเต็ม <i class="fa-solid fa-arrow-up-right-from-square"></i></a>
