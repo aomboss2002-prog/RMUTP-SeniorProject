@@ -33,6 +33,22 @@ if /i "%~1"=="--check" (
 )
 if /i "%~1"=="--no-pause" set "NO_PAUSE=1"
 if /i "%~2"=="--no-pause" set "NO_PAUSE=1"
+
+if /i "%RMUTP_LIVE_CORE%"=="1" goto publisher_core
+set "RMUTP_GIT_MESSAGE=%COMMIT_MESSAGE%"
+set "RMUTP_GIT_CHECK=%CHECK_ONLY%"
+set "LIVE_PAUSE="
+if "%NO_PAUSE%"=="1" set "LIVE_PAUSE=-NoPause"
+chcp 65001 >nul
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\live-bat.ps1" -ScriptPath "%~f0" -Title "GitHub Publisher" -TotalSteps 4 %LIVE_PAUSE%
+set "LIVE_EXIT=%ERRORLEVEL%"
+set "RMUTP_GIT_MESSAGE="
+set "RMUTP_GIT_CHECK="
+exit /b %LIVE_EXIT%
+
+:publisher_core
+if defined RMUTP_GIT_MESSAGE set "COMMIT_MESSAGE=%RMUTP_GIT_MESSAGE%"
+if "%RMUTP_GIT_CHECK%"=="1" set "CHECK_ONLY=1"
 cd /d "%ROOT_DIR%"
 
 title RMUTP Senior Project ^| Git Publisher
@@ -126,7 +142,7 @@ echo [OK] Commit author: %GIT_USER_NAME% ^<%GIT_USER_EMAIL%^>
 if "%CHECK_ONLY%"=="1" (
     echo.
     echo [OK] GitHub publisher check completed. No files were staged or pushed.
-    if "%NO_PAUSE%"=="0" pause
+    if not defined RMUTP_LIVE_CORE if "%NO_PAUSE%"=="0" pause
     exit /b 0
 )
 
@@ -171,7 +187,7 @@ echo ====================================================
 echo Repository: %REMOTE_URL%
 echo Branch    : %BRANCH%
 echo.
-if "%NO_PAUSE%"=="0" pause
+if not defined RMUTP_LIVE_CORE if "%NO_PAUSE%"=="0" pause
 exit /b 0
 
 :fail
@@ -181,5 +197,5 @@ echo GITHUB PUBLISH FAILED
 echo ====================================================
 echo Read the error above and try again.
 echo.
-if "%NO_PAUSE%"=="0" pause
+if not defined RMUTP_LIVE_CORE if "%NO_PAUSE%"=="0" pause
 exit /b 1

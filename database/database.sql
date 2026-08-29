@@ -34,7 +34,9 @@ CREATE TABLE IF NOT EXISTS students (
     photo VARCHAR(255) DEFAULT 'assets/img/profile-student.svg',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_students_advisor (advisor_id),
-    INDEX idx_students_project (project_id)
+    INDEX idx_students_project (project_id),
+    CONSTRAINT fk_students_advisor FOREIGN KEY (advisor_id) REFERENCES advisors(id)
+        ON UPDATE CASCADE ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS student_advisors (
@@ -43,7 +45,11 @@ CREATE TABLE IF NOT EXISTS student_advisors (
     advisor_role ENUM('chair', 'vice_chair', 'committee') NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (student_id, advisor_role),
-    UNIQUE KEY unique_student_advisor (student_id, advisor_id)
+    UNIQUE KEY unique_student_advisor (student_id, advisor_id),
+    CONSTRAINT fk_student_advisors_student FOREIGN KEY (student_id) REFERENCES students(id)
+        ON UPDATE CASCADE ON DELETE CASCADE,
+    CONSTRAINT fk_student_advisors_advisor FOREIGN KEY (advisor_id) REFERENCES advisors(id)
+        ON UPDATE CASCADE ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS advisor_invitations (
@@ -54,7 +60,10 @@ CREATE TABLE IF NOT EXISTS advisor_invitations (
     advisor_role ENUM('chair', 'vice_chair', 'committee') NOT NULL,
     status ENUM('Pending', 'Accepted', 'Rejected') DEFAULT 'Pending',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    responded_at TIMESTAMP NULL
+    responded_at TIMESTAMP NULL,
+    INDEX idx_advisor_invitations_group (group_id),
+    INDEX idx_advisor_invitations_student (student_id),
+    INDEX idx_advisor_invitations_advisor_status (advisor_id, status)
 );
 
 CREATE TABLE IF NOT EXISTS group_invitations (
@@ -64,7 +73,10 @@ CREATE TABLE IF NOT EXISTS group_invitations (
     invited_by_student_id VARCHAR(20) NOT NULL,
     status ENUM('Pending', 'Accepted', 'Rejected') DEFAULT 'Pending',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    responded_at TIMESTAMP NULL
+    responded_at TIMESTAMP NULL,
+    INDEX idx_group_invitations_group (group_id),
+    INDEX idx_group_invitations_student_status (invited_student_id, status),
+    INDEX idx_group_invitations_sender (invited_by_student_id)
 );
 
 CREATE TABLE IF NOT EXISTS projects (
@@ -78,7 +90,60 @@ CREATE TABLE IF NOT EXISTS projects (
     progress INT DEFAULT 0,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_projects_student (student_id),
-    INDEX idx_projects_advisor (advisor_id)
+    INDEX idx_projects_advisor (advisor_id),
+    CONSTRAINT fk_projects_student FOREIGN KEY (student_id) REFERENCES students(id)
+        ON UPDATE CASCADE ON DELETE SET NULL,
+    CONSTRAINT fk_projects_advisor FOREIGN KEY (advisor_id) REFERENCES advisors(id)
+        ON UPDATE CASCADE ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS project_groups (
+    id VARCHAR(20) PRIMARY KEY,
+    name VARCHAR(180) NOT NULL,
+    leader_id VARCHAR(20) NOT NULL,
+    project_id VARCHAR(20) NULL,
+    faculty VARCHAR(180) NOT NULL,
+    created_at DATETIME NOT NULL,
+    INDEX idx_project_groups_project (project_id),
+    CONSTRAINT fk_group_leader FOREIGN KEY (leader_id) REFERENCES students(id)
+        ON UPDATE CASCADE ON DELETE RESTRICT,
+    CONSTRAINT fk_group_project FOREIGN KEY (project_id) REFERENCES projects(id)
+        ON UPDATE CASCADE ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS project_group_members (
+    group_id VARCHAR(20) NOT NULL,
+    student_id VARCHAR(20) NOT NULL UNIQUE,
+    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (group_id, student_id),
+    CONSTRAINT fk_member_group FOREIGN KEY (group_id) REFERENCES project_groups(id)
+        ON UPDATE CASCADE ON DELETE CASCADE,
+    CONSTRAINT fk_member_student FOREIGN KEY (student_id) REFERENCES students(id)
+        ON UPDATE CASCADE ON DELETE RESTRICT
+);
+
+CREATE TABLE IF NOT EXISTS group_messages (
+    id VARCHAR(24) PRIMARY KEY,
+    group_id VARCHAR(20) NULL,
+    student_id VARCHAR(20) NULL,
+    advisor_id VARCHAR(20) NULL,
+    sender VARCHAR(180) NOT NULL,
+    receiver VARCHAR(180) NOT NULL,
+    subject VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    attachment VARCHAR(255) DEFAULT '',
+    read_status TINYINT(1) DEFAULT 0,
+    created_at DATETIME NOT NULL,
+    INDEX idx_group_messages_group (group_id),
+    INDEX idx_group_messages_student (student_id),
+    INDEX idx_group_messages_advisor (advisor_id),
+    INDEX idx_group_messages_created (created_at),
+    CONSTRAINT fk_message_group FOREIGN KEY (group_id) REFERENCES project_groups(id)
+        ON UPDATE CASCADE ON DELETE CASCADE,
+    CONSTRAINT fk_message_student FOREIGN KEY (student_id) REFERENCES students(id)
+        ON UPDATE CASCADE ON DELETE SET NULL,
+    CONSTRAINT fk_message_advisor FOREIGN KEY (advisor_id) REFERENCES advisors(id)
+        ON UPDATE CASCADE ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS documents (
@@ -96,7 +161,15 @@ CREATE TABLE IF NOT EXISTS documents (
     approved_at DATETIME NULL,
     INDEX idx_documents_project (project_id),
     INDEX idx_documents_student (student_id),
-    INDEX idx_documents_group (group_id)
+    INDEX idx_documents_group (group_id),
+    INDEX idx_documents_stage_status (type, chapter, status),
+    INDEX idx_documents_uploaded (uploaded_at),
+    CONSTRAINT fk_documents_project FOREIGN KEY (project_id) REFERENCES projects(id)
+        ON UPDATE CASCADE ON DELETE SET NULL,
+    CONSTRAINT fk_documents_student FOREIGN KEY (student_id) REFERENCES students(id)
+        ON UPDATE CASCADE ON DELETE SET NULL,
+    CONSTRAINT fk_documents_group FOREIGN KEY (group_id) REFERENCES project_groups(id)
+        ON UPDATE CASCADE ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS notifications (
@@ -110,7 +183,16 @@ CREATE TABLE IF NOT EXISTS notifications (
     type VARCHAR(80) DEFAULT 'System',
     read_status TINYINT(1) DEFAULT 0,
     read_by LONGTEXT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_notifications_group_created (group_id, created_at),
+    INDEX idx_notifications_student_created (student_id, created_at),
+    INDEX idx_notifications_advisor_created (advisor_id, created_at),
+    CONSTRAINT fk_notifications_group FOREIGN KEY (group_id) REFERENCES project_groups(id)
+        ON UPDATE CASCADE ON DELETE CASCADE,
+    CONSTRAINT fk_notifications_student FOREIGN KEY (student_id) REFERENCES students(id)
+        ON UPDATE CASCADE ON DELETE CASCADE,
+    CONSTRAINT fk_notifications_advisor FOREIGN KEY (advisor_id) REFERENCES advisors(id)
+        ON UPDATE CASCADE ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS activities (
@@ -127,7 +209,15 @@ CREATE TABLE IF NOT EXISTS comments (
     author_id VARCHAR(20) NULL,
     author VARCHAR(160) NOT NULL,
     message TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_comments_student_created (student_id, created_at),
+    INDEX idx_comments_document_created (document_id, created_at),
+    CONSTRAINT fk_comments_student FOREIGN KEY (student_id) REFERENCES students(id)
+        ON UPDATE CASCADE ON DELETE CASCADE,
+    CONSTRAINT fk_comments_document FOREIGN KEY (document_id) REFERENCES documents(id)
+        ON UPDATE CASCADE ON DELETE CASCADE,
+    CONSTRAINT fk_comments_advisor FOREIGN KEY (author_id) REFERENCES advisors(id)
+        ON UPDATE CASCADE ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS approvals (
@@ -141,7 +231,30 @@ CREATE TABLE IF NOT EXISTS approvals (
     status VARCHAR(40) DEFAULT 'Review',
     message TEXT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    approved_at DATETIME NULL
+    approved_at DATETIME NULL,
+    INDEX idx_approvals_student_created (student_id, created_at),
+    INDEX idx_approvals_document_created (document_id, created_at),
+    INDEX idx_approvals_group_created (group_id, created_at),
+    INDEX idx_approvals_reviewer_status (reviewer_id, status),
+    CONSTRAINT fk_approvals_student FOREIGN KEY (student_id) REFERENCES students(id)
+        ON UPDATE CASCADE ON DELETE CASCADE,
+    CONSTRAINT fk_approvals_document FOREIGN KEY (document_id) REFERENCES documents(id)
+        ON UPDATE CASCADE ON DELETE CASCADE,
+    CONSTRAINT fk_approvals_group FOREIGN KEY (group_id) REFERENCES project_groups(id)
+        ON UPDATE CASCADE ON DELETE CASCADE,
+    CONSTRAINT fk_approvals_advisor FOREIGN KEY (reviewer_id) REFERENCES advisors(id)
+        ON UPDATE CASCADE ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS app_state (
+    state_key VARCHAR(40) PRIMARY KEY,
+    state_json LONGTEXT NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version VARCHAR(80) PRIMARY KEY,
+    applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS audit_logs (

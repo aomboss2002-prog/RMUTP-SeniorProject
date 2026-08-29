@@ -1,4 +1,15 @@
 @echo off
+if /i "%RMUTP_LIVE_CORE%"=="1" goto live_core
+set "LIVE_PAUSE="
+set "LIVE_TITLE=Admin Portal Build"
+if /i "%~1"=="--no-pause" set "LIVE_PAUSE=-NoPause"
+if /i "%~1"=="--check" set "LIVE_TITLE=Admin Portal Check"
+if /i "%~2"=="--no-pause" set "LIVE_PAUSE=-NoPause"
+chcp 65001 >nul
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\live-bat.ps1" -ScriptPath "%~f0" -Title "%LIVE_TITLE%" -TotalSteps 4 %LIVE_PAUSE%
+exit /b %ERRORLEVEL%
+
+:live_core
 setlocal EnableExtensions EnableDelayedExpansion
 
 set "ROOT_DIR=%~dp0"
@@ -33,7 +44,7 @@ echo Admin login       : http://localhost/RMUTP-SeniorProject/login.php
 echo Email             : admin@rmutp.ac.th
 echo Password          : admin123
 echo.
-if /I not "%NO_PAUSE%"=="--no-pause" pause
+if not defined RMUTP_LIVE_CORE if /I not "%NO_PAUSE%"=="--no-pause" pause
 exit /b 0
 
 :fail
@@ -43,7 +54,7 @@ echo ADMIN BUILD FAILED
 echo ====================================================
 echo Fix the error shown above, then run buildadmin.bat again.
 echo.
-if /I not "%NO_PAUSE%"=="--no-pause" pause
+if not defined RMUTP_LIVE_CORE if /I not "%NO_PAUSE%"=="--no-pause" pause
 exit /b 1
 
 :find_php

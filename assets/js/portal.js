@@ -9,6 +9,7 @@
     let studentMessagePage = 1;
     const studentMessagesPerPage = 5;
     const pendingGetRequests = new Map();
+    let dashboardBootstrapConsumed = false;
 
     function usesVercelBlob() {
         return $('meta[name="storage-driver"]').attr('content') === 'vercel_blob';
@@ -284,9 +285,7 @@
         });
     }
 
-    function loadDashboard() {
-        request('api/student/dashboard/').done(function (response) {
-            const dashboard = response.data;
+    function renderDashboard(dashboard) {
             const data = dashboard.project;
             const student = data.student;
             const project = data.project;
@@ -307,6 +306,21 @@
                 </a>
             `).join('') || '<div class="list-group-item text-muted">ยังไม่มีการแจ้งเตือน</div>');
             updateCounter(dashboard.unread);
+    }
+
+    function loadDashboard() {
+        const bootstrap = document.getElementById('studentDashboardBootstrap');
+        if (!dashboardBootstrapConsumed && bootstrap) {
+            dashboardBootstrapConsumed = true;
+            try {
+                renderDashboard(JSON.parse(bootstrap.textContent || '{}'));
+                return;
+            } catch (_error) {
+                // Use the API fallback when an embedded payload cannot be parsed.
+            }
+        }
+        request('api/student/dashboard/').done(function (response) {
+            renderDashboard(response.data);
         });
     }
 
@@ -1009,7 +1023,7 @@
         const currentPage = page();
         if (!String(currentPage).startsWith('portal-')) return;
         initForms();
-        loadNavbarProfile();
+        if (currentPage !== 'portal-dashboard') loadNavbarProfile();
         if (currentPage === 'portal-dashboard') loadDashboard();
         if (currentPage === 'portal-profile') loadProfile();
         if (currentPage === 'portal-project') loadProjectPage();
@@ -1021,14 +1035,18 @@
         if (currentPage === 'portal-messages') loadMessages();
         if (currentPage === 'portal-status') loadStatus();
 
-        request('api/student/notifications/').done((response) => updateCounter(response.unread));
+        if (currentPage !== 'portal-dashboard') {
+            request('api/student/notifications/').done((response) => updateCounter(response.unread));
+        }
         setInterval(function () {
             if (document.visibilityState !== 'visible') return;
             if (currentPage === 'portal-dashboard') loadDashboard();
             if (currentPage === 'portal-notifications') loadNotifications();
             if (currentPage === 'portal-messages') loadMessages();
             if (currentPage === 'portal-status') loadStatus();
-            request('api/student/notifications/').done((response) => updateCounter(response.unread));
+            if (currentPage !== 'portal-dashboard') {
+                request('api/student/notifications/').done((response) => updateCounter(response.unread));
+            }
         }, refreshMs);
 
         setInterval(function () {

@@ -33,31 +33,53 @@ function env_config(): array
 
 function ensure_database_column(PDO $pdo, string $table, string $column, string $definition): void
 {
-    $statement = $pdo->prepare(
-        'SELECT COUNT(*) FROM information_schema.COLUMNS
-         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name AND COLUMN_NAME = :column_name'
-    );
-    $statement->execute(['table_name' => $table, 'column_name' => $column]);
-    if ((int) $statement->fetchColumn() === 0) {
-        $pdo->exec("ALTER TABLE `{$table}` ADD COLUMN `{$column}` {$definition}");
+    $columnExists = static function () use ($pdo, $table, $column): bool {
+        $statement = $pdo->prepare(
+            'SELECT COUNT(*) FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name AND COLUMN_NAME = :column_name'
+        );
+        $statement->execute(['table_name' => $table, 'column_name' => $column]);
+        return (int) $statement->fetchColumn() > 0;
+    };
+    if (!$columnExists()) {
+        try {
+            $pdo->exec("ALTER TABLE `{$table}` ADD COLUMN `{$column}` {$definition}");
+        } catch (PDOException $error) {
+            // Another serverless invocation may have applied the same DDL
+            // after our information_schema check.
+            if (!$columnExists()) {
+                throw $error;
+            }
+        }
     }
 }
 
 function ensure_database_index(PDO $pdo, string $table, string $index, string $columns, bool $unique = false): void
 {
-    $statement = $pdo->prepare(
-        'SELECT COUNT(*) FROM information_schema.STATISTICS
-         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name AND INDEX_NAME = :index_name'
-    );
-    $statement->execute(['table_name' => $table, 'index_name' => $index]);
-    if ((int) $statement->fetchColumn() === 0) {
-        $pdo->exec(sprintf(
-            'ALTER TABLE `%s` ADD %sINDEX `%s` (%s)',
-            $table,
-            $unique ? 'UNIQUE ' : '',
-            $index,
-            $columns
-        ));
+    $indexExists = static function () use ($pdo, $table, $index): bool {
+        $statement = $pdo->prepare(
+            'SELECT COUNT(*) FROM information_schema.STATISTICS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name AND INDEX_NAME = :index_name'
+        );
+        $statement->execute(['table_name' => $table, 'index_name' => $index]);
+        return (int) $statement->fetchColumn() > 0;
+    };
+    if (!$indexExists()) {
+        try {
+            $pdo->exec(sprintf(
+                'ALTER TABLE `%s` ADD %sINDEX `%s` (%s)',
+                $table,
+                $unique ? 'UNIQUE ' : '',
+                $index,
+                $columns
+            ));
+        } catch (PDOException $error) {
+            // Treat an index created concurrently as success, but surface any
+            // genuine DDL failure.
+            if (!$indexExists()) {
+                throw $error;
+            }
+        }
     }
 }
 
@@ -200,7 +222,25 @@ function database_schema_is_current(PDO $pdo, string $version): bool
                'notifications', 'notification_reads'
            )"
     )->fetchColumn();
-    if ($relationCount >= 32) {
+    $requiredIndexes = [
+        'idx_advisor_invitations_group', 'idx_advisor_invitations_student',
+        'idx_advisor_invitations_advisor_status', 'idx_group_invitations_group',
+        'idx_group_invitations_student_status', 'idx_group_invitations_sender',
+        'idx_documents_stage_status', 'idx_documents_uploaded',
+        'idx_notifications_group_created', 'idx_notifications_student_created',
+        'idx_notifications_advisor_created', 'idx_comments_student_created',
+        'idx_comments_document_created', 'idx_approvals_student_created',
+        'idx_approvals_document_created', 'idx_approvals_group_created',
+        'idx_approvals_reviewer_status',
+    ];
+    $indexPlaceholders = implode(',', array_fill(0, count($requiredIndexes), '?'));
+    $indexStatement = $pdo->prepare(
+        "SELECT COUNT(DISTINCT INDEX_NAME) FROM information_schema.STATISTICS
+         WHERE TABLE_SCHEMA = DATABASE() AND INDEX_NAME IN ({$indexPlaceholders})"
+    );
+    $indexStatement->execute($requiredIndexes);
+    $requiredIndexCount = (int) $indexStatement->fetchColumn();
+    if ($relationCount >= 32 && $requiredIndexCount === count($requiredIndexes)) {
         $insert = $pdo->prepare('INSERT IGNORE INTO schema_migrations (version) VALUES (:version)');
         $insert->execute(['version' => $version]);
         return true;
@@ -253,7 +293,7 @@ function database_connection(): PDO
         return $pdo;
     }
 
-    $schemaVersion = '20260828_01_hosted_mysql';
+    $schemaVersion = '20260829_02_stability';
     if (database_schema_is_current($pdo, $schemaVersion)) {
         return $pdo;
     }
@@ -423,6 +463,24 @@ function database_connection(): PDO
     ensure_database_index($pdo, 'documents', 'idx_documents_project', '`project_id`');
     ensure_database_index($pdo, 'documents', 'idx_documents_student', '`student_id`');
     ensure_database_index($pdo, 'documents', 'idx_documents_group', '`group_id`');
+    ensure_database_index($pdo, 'documents', 'idx_documents_stage_status', '`type`, `chapter`, `status`');
+    ensure_database_index($pdo, 'documents', 'idx_documents_uploaded', '`uploaded_at`');
+    ensure_database_index($pdo, 'project_groups', 'idx_project_groups_project', '`project_id`');
+    ensure_database_index($pdo, 'advisor_invitations', 'idx_advisor_invitations_group', '`group_id`');
+    ensure_database_index($pdo, 'advisor_invitations', 'idx_advisor_invitations_student', '`student_id`');
+    ensure_database_index($pdo, 'advisor_invitations', 'idx_advisor_invitations_advisor_status', '`advisor_id`, `status`');
+    ensure_database_index($pdo, 'group_invitations', 'idx_group_invitations_group', '`group_id`');
+    ensure_database_index($pdo, 'group_invitations', 'idx_group_invitations_student_status', '`invited_student_id`, `status`');
+    ensure_database_index($pdo, 'group_invitations', 'idx_group_invitations_sender', '`invited_by_student_id`');
+    ensure_database_index($pdo, 'notifications', 'idx_notifications_group_created', '`group_id`, `created_at`');
+    ensure_database_index($pdo, 'notifications', 'idx_notifications_student_created', '`student_id`, `created_at`');
+    ensure_database_index($pdo, 'notifications', 'idx_notifications_advisor_created', '`advisor_id`, `created_at`');
+    ensure_database_index($pdo, 'comments', 'idx_comments_student_created', '`student_id`, `created_at`');
+    ensure_database_index($pdo, 'comments', 'idx_comments_document_created', '`document_id`, `created_at`');
+    ensure_database_index($pdo, 'approvals', 'idx_approvals_student_created', '`student_id`, `created_at`');
+    ensure_database_index($pdo, 'approvals', 'idx_approvals_document_created', '`document_id`, `created_at`');
+    ensure_database_index($pdo, 'approvals', 'idx_approvals_group_created', '`group_id`, `created_at`');
+    ensure_database_index($pdo, 'approvals', 'idx_approvals_reviewer_status', '`reviewer_id`, `status`');
 
     ensure_database_foreign_key($pdo, 'students', 'advisor_id', 'advisors', 'fk_students_advisor', 'SET NULL');
     ensure_database_foreign_key($pdo, 'projects', 'student_id', 'students', 'fk_projects_student', 'SET NULL');

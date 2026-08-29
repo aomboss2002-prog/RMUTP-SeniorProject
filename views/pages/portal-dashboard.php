@@ -29,6 +29,13 @@
     </div>
 </section>
 
+<?php if (isset($studentDashboardBootstrap) && is_array($studentDashboardBootstrap)): ?>
+<script type="application/json" id="studentDashboardBootstrap"><?= json_encode(
+    $studentDashboardBootstrap,
+    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
+) ?></script>
+<?php endif; ?>
+
 <section class="row g-4 mt-1">
     <div class="col-xl-5">
         <div class="card">

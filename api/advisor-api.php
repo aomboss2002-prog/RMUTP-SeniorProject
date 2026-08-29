@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/../app/store.php';
 require_once __DIR__ . '/../app/session.php';
 
 start_app_session();

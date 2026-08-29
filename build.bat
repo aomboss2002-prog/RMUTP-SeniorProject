@@ -1,4 +1,12 @@
 @echo off
+if /i "%RMUTP_LIVE_CORE%"=="1" goto live_core
+set "LIVE_PAUSE="
+if /i "%~1"=="--no-pause" set "LIVE_PAUSE=-NoPause"
+chcp 65001 >nul
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\live-bat.ps1" -ScriptPath "%~f0" -Title "Project Build" -TotalSteps 11 %LIVE_PAUSE%
+exit /b %ERRORLEVEL%
+
+:live_core
 setlocal EnableExtensions EnableDelayedExpansion
 
 set "ROOT_DIR=%~dp0"
@@ -99,7 +107,7 @@ echo.
 echo   !C_DIM!Run!C_RESET!       !C_CYAN!.\run.bat!C_RESET!
 echo   !C_DIM!Open!C_RESET!      !C_CYAN!http://localhost/RMUTP-SeniorProject/login.php!C_RESET!
 echo.
-if /I not "%NO_PAUSE%"=="--no-pause" pause
+if not defined RMUTP_LIVE_CORE if /I not "%NO_PAUSE%"=="--no-pause" pause
 exit /b 0
 
 :fail
@@ -107,7 +115,7 @@ echo.
 echo   !B_RED!  FAILED  !C_RESET!  !C_RED!Build stopped at !CURRENT_PROGRESS!%%!C_RESET!
 echo   !C_DIM!Review the error above, fix the issue, and run again.!C_RESET!
 echo.
-if /I not "%NO_PAUSE%"=="--no-pause" pause
+if not defined RMUTP_LIVE_CORE if /I not "%NO_PAUSE%"=="--no-pause" pause
 exit /b 1
 
 :boot_animation

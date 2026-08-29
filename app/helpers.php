@@ -63,12 +63,25 @@ function versioned_asset_url(string $path): string
 
     $relativePath = ltrim($path, '/');
     if (!isset($versions[$relativePath])) {
-        $file = __DIR__ . '/../assets/' . $relativePath;
-        $modifiedAt = is_file($file) ? filemtime($file) : false;
-        $fileSize = is_file($file) ? filesize($file) : false;
-        $versions[$relativePath] = ($modifiedAt !== false && $fileSize !== false)
-            ? dechex($modifiedAt) . '-' . dechex($fileSize)
-            : '1';
+        // A Vercel deployment identifier is content-specific and therefore a
+        // safer cache key than a serverless file timestamp. Local/XAMPP keeps
+        // using mtime + size so edited assets refresh without a build step.
+        $deploymentVersion = trim((string) (
+            getenv('VERCEL_GIT_COMMIT_SHA')
+            ?: getenv('VERCEL_DEPLOYMENT_ID')
+            ?: getenv('APP_ASSET_VERSION')
+            ?: ''
+        ));
+        if ($deploymentVersion !== '') {
+            $versions[$relativePath] = substr(hash('sha256', $deploymentVersion . '|' . $relativePath), 0, 16);
+        } else {
+            $file = __DIR__ . '/../assets/' . $relativePath;
+            $modifiedAt = is_file($file) ? filemtime($file) : false;
+            $fileSize = is_file($file) ? filesize($file) : false;
+            $versions[$relativePath] = ($modifiedAt !== false && $fileSize !== false)
+                ? dechex($modifiedAt) . '-' . dechex($fileSize)
+                : '1';
+        }
     }
     $version = $versions[$relativePath];
     return asset_url($relativePath) . '?v=' . rawurlencode($version);

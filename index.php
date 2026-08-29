@@ -146,4 +146,12 @@ if (str_starts_with($page, 'advisor-') && $page !== 'advisor-login' && empty($_S
     exit;
 }
 
+// Include the first dashboard payload in the authenticated page response. This
+// avoids a second serverless/database round trip before placeholders can render.
+if ($page === 'portal-dashboard') {
+    define('STUDENT_API_LIBRARY_ONLY', true);
+    require __DIR__ . '/api/student-api.php';
+    $studentDashboardBootstrap = student_dashboard_payload(student_context($data));
+}
+
 require __DIR__ . '/views/layout.php';

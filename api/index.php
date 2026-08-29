@@ -64,7 +64,7 @@ function uploaded_student_photo(string $studentId): ?string
     return 'uploads/student/' . $filename;
 }
 
-function authenticate_user(array $payload, array $data): ?array
+function authenticate_user(array $payload, array &$data): ?array
 {
     $email = trim((string) ($payload['email'] ?? ''));
     $password = trim((string) ($payload['password'] ?? ''));
@@ -101,11 +101,22 @@ function authenticate_user(array $payload, array $data): ?array
         break;
     }
 
-    foreach ($data['students'] as $student) {
+    foreach ($data['students'] as &$student) {
         if (($student['email'] ?? '') === $email || ($student['code'] ?? '') === $email) {
             $expectedPassword = (string) ($student['code'] ?? '');
-            if ((!empty($student['password_hash']) && secure_password_verify($password, (string) $student['password_hash']))
-                || (empty($student['password_hash']) && hash_equals($expectedPassword, $password))) {
+            $hasPasswordHash = !empty($student['password_hash']);
+            $passwordValid = $hasPasswordHash
+                ? secure_password_verify($password, (string) $student['password_hash'])
+                : ($expectedPassword !== '' && hash_equals($expectedPassword, $password));
+            if ($passwordValid) {
+                // Migrate a legacy student-code password to a one-way hash on
+                // the first successful login. Future logins never need the
+                // plaintext fallback for this account again.
+                $passwordMigrated = false;
+                if (!$hasPasswordHash) {
+                    $student['password_hash'] = secure_password_hash($password);
+                    $passwordMigrated = true;
+                }
                 return [
                     'role' => 'student',
                     'id' => $student['id'] ?? '',
@@ -114,6 +125,7 @@ function authenticate_user(array $payload, array $data): ?array
                     'student_code' => $student['code'] ?? '',
                     'photo' => $student['photo'] ?? 'assets/img/profile-student.svg',
                     'redirect_page' => 'portal-dashboard',
+                    '_password_migrated' => $passwordMigrated,
                 ];
             }
             break;
@@ -159,6 +171,10 @@ if ($resource === 'auth' && $action === 'login') {
         }
         $user = authenticate_user($payload, $data);
         if ($user) {
+            if (!empty($user['_password_migrated'])) {
+                save_data($data);
+            }
+            unset($user['_password_migrated']);
             record_login_attempt((string) $payload['email'], true);
             session_regenerate_id(true);
             $_SESSION['app_user'] = $user;
@@ -463,11 +479,15 @@ if ($resource === 'upload' && $method === 'POST') {
         mkdir($targetDir, 0775, true);
     }
     $originalName = basename($_FILES['file']['name']);
+    // Capture the size before move/upload. On Vercel Blob there is no local
+    // destination file after the upload, so filesize($target) is invalid.
+    $uploadedBytes = max(0, (int) ($_FILES['file']['size'] ?? filesize($_FILES['file']['tmp_name'])));
     $target = $targetDir . '/' . bin2hex(random_bytes(24)) . '.pdf';
     if (storage_driver() === 'vercel_blob') {
         try {
             storage_put_uploaded_file($_FILES['file']['tmp_name'], $type, basename($target), 'application/pdf');
-        } catch (Throwable) {
+        } catch (Throwable $exception) {
+            error_log('Document Blob upload failed: ' . $exception->getMessage());
             respond(['success' => false, 'message' => 'Could not save uploaded file'], 500);
         }
     } elseif (!move_uploaded_file($_FILES['file']['tmp_name'], $target)) {
@@ -481,7 +501,7 @@ if ($resource === 'upload' && $method === 'POST') {
         'title' => $_POST['title'] ?? ucfirst($type) . ' File',
         'filename' => basename($target),
         'original_name' => $originalName,
-        'size' => round(filesize($target) / 1048576, 2) . ' MB',
+        'size' => round($uploadedBytes / 1048576, 2) . ' MB',
         'status' => 'Review',
         'uploaded_at' => date('Y-m-d H:i:s'),
     ];

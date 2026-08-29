@@ -4,7 +4,10 @@ require_once __DIR__ . '/../app/session.php';
 require_once __DIR__ . '/../app/storage.php';
 start_app_session();
 
-header('Content-Type: application/json; charset=utf-8');
+$studentApiLibraryOnly = defined('STUDENT_API_LIBRARY_ONLY') && STUDENT_API_LIBRARY_ONLY;
+if (!$studentApiLibraryOnly) {
+    header('Content-Type: application/json; charset=utf-8');
+}
 
 $data = load_data();
 $method = $_SERVER['REQUEST_METHOD'];
@@ -371,6 +374,18 @@ function portal_notification_payload(array $context): array
     ];
 }
 
+function student_dashboard_payload(array $context): array
+{
+    $notificationPayload = portal_notification_payload($context);
+    return [
+        'project' => portal_project_payload($context),
+        'timeline' => portal_timeline($context),
+        'notifications' => $notificationPayload['data'],
+        'unread' => $notificationPayload['unread'],
+        'announcement' => $notificationPayload['announcement'],
+    ];
+}
+
 function save_student_upload(array &$data, array $context, string $stage): void
 {
     $uploadPayload = student_payload();
@@ -500,6 +515,10 @@ function save_student_upload(array &$data, array $context, string $stage): void
     ]);
     save_data($data);
     student_respond(['success' => true, 'data' => $document, 'message' => 'File uploaded successfully.']);
+}
+
+if ($studentApiLibraryOnly) {
+    return;
 }
 
 $context = student_context($data);
@@ -975,14 +994,7 @@ if ($endpoint === 'profile') {
 }
 
 if ($endpoint === 'dashboard') {
-    $notificationPayload = portal_notification_payload($context);
-    student_respond(['success' => true, 'data' => [
-        'project' => portal_project_payload($context),
-        'timeline' => portal_timeline($context),
-        'notifications' => $notificationPayload['data'],
-        'unread' => $notificationPayload['unread'],
-        'announcement' => $notificationPayload['announcement'],
-    ]]);
+    student_respond(['success' => true, 'data' => student_dashboard_payload($context)]);
 }
 
 if ($endpoint === 'project') {
@@ -1156,9 +1168,33 @@ if (in_array($endpoint, ['upload/proposal', 'upload/draft', 'upload/complete'], 
 
 if ($endpoint === 'change-password' && $method === 'POST') {
     $payload = student_payload();
-    if (empty($payload['new_password']) || strlen((string) $payload['new_password']) < 6) {
-        student_respond(['success' => false, 'message' => 'Password must be at least 6 characters.'], 422);
+    $currentPassword = (string) ($payload['current_password'] ?? '');
+    $newPassword = (string) ($payload['new_password'] ?? '');
+    if ($currentPassword === '') {
+        student_respond(['success' => false, 'message' => 'Current password is required.'], 422);
     }
+    if (strlen($newPassword) < 8) {
+        student_respond(['success' => false, 'message' => 'Password must be at least 8 characters.'], 422);
+    }
+    $studentIndex = null;
+    foreach ($data['students'] as $index => $studentRow) {
+        if (($studentRow['id'] ?? '') === $context['studentId']) {
+            $studentIndex = $index;
+            break;
+        }
+    }
+    if ($studentIndex === null) {
+        student_respond(['success' => false, 'message' => 'Student account not found.'], 404);
+    }
+    $account = $data['students'][$studentIndex];
+    $currentValid = !empty($account['password_hash'])
+        ? secure_password_verify($currentPassword, (string) $account['password_hash'])
+        : hash_equals((string) ($account['code'] ?? ''), $currentPassword);
+    if (!$currentValid) {
+        student_respond(['success' => false, 'message' => 'Current password is incorrect.'], 422);
+    }
+    $data['students'][$studentIndex]['password_hash'] = secure_password_hash($newPassword);
+    save_data($data);
     student_respond(['success' => true, 'message' => 'Password changed successfully.']);
 }
 

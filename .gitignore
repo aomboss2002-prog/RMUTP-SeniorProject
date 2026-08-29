@@ -21,6 +21,7 @@ node_modules/
 coverage/
 dist/
 build/
+tests/dogfood-output/
 
 # Logs and temporary files
 *.log
