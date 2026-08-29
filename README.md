@@ -17,6 +17,7 @@
 - เชิญอาจารย์เป็นประธาน รองประธาน และกรรมการ
 - ส่ง Proposal, Draft บทที่ 1-5 และ Complete ตามลำดับ
 - ดูสถานะ ผลพิจารณา รายละเอียดที่ต้องแก้ไข ไทม์ไลน์ ข้อความ และการแจ้งเตือน
+- เปลี่ยนรหัสผ่านได้จากหน้าโปรไฟล์ โดยต้องยืนยันรหัสเดิมและใช้รหัสใหม่อย่างน้อย 8 ตัวอักษร
 
 ### อาจารย์
 
@@ -239,6 +240,10 @@ RMUTP-SeniorProject/
 
 เอกสารโครงงานต้องเป็น PDF และมีขนาดไม่เกิน 20 MB
 
+- โหมด XAMPP (`STORAGE_DRIVER=local`) จัดเก็บไฟล์ในโฟลเดอร์ `uploads`
+- โหมด Vercel (`STORAGE_DRIVER=vercel_blob`) จัดเก็บไฟล์ใน Private Vercel Blob และไม่พึ่งดิสก์ชั่วคราวของ Serverless Function
+- ระบบบันทึกขนาดไฟล์จากไฟล์ที่อัปโหลดก่อนส่งเข้า Blob จึงไม่เรียกข้อมูลจาก Local path ที่ไม่มีอยู่บน Vercel
+
 ## ฐานข้อมูล
 
 ฐานข้อมูลหลักชื่อ `rmutp_senior_project` ใช้ `utf8mb4` และ `utf8mb4_unicode_ci` เพื่อรองรับภาษาไทย
@@ -305,10 +310,12 @@ erDiagram
 | ตาราง | Primary Key | หน้าที่และความสัมพันธ์สำคัญ |
 | --- | --- | --- |
 | `user_sessions` | `session_id` | Session ฝั่ง Backend แยกประเภทผู้ใช้ เก็บ IP, User-Agent, เวลาล่าสุด และวันหมดอายุ |
+| `php_sessions` | `session_id` | Session หลักของ PHP เมื่อกำหนด `SESSION_DRIVER=database` พร้อมดัชนีวันหมดอายุ |
 | `password_reset_tokens` | `id` | Token รีเซ็ตรหัสผ่าน เก็บเฉพาะ SHA-256 hash พร้อมเวลาหมดอายุและเวลาที่ใช้แล้ว |
 | `audit_logs` | `id` | ประวัติการกระทำ ระบุผู้กระทำ Action, Entity และรายละเอียด JSON |
 | `settings` | `setting_key` | ค่าตั้งระบบแบบ Key-Value |
 | `app_state` | `state_key` | Runtime state รูปแบบ JSON สำหรับข้อมูลที่ระบบเดิมยังจัดเก็บแบบ Hybrid |
+| `schema_migrations` | `version` | บันทึกเวอร์ชัน Schema ที่ติดตั้งแล้ว ป้องกันการรัน DDL ซ้ำทุก Request |
 
 ### Foreign Key และพฤติกรรมเมื่อลบข้อมูล
 
@@ -321,7 +328,12 @@ erDiagram
 
 - `students`: `advisor_id`, `project_id`
 - `projects`: `student_id`, `advisor_id`
-- `documents`: `project_id`, `student_id`, `group_id`
+- `documents`: `project_id`, `student_id`, `group_id`, `(type, chapter, status)`, `uploaded_at`
+- `advisor_invitations`: `group_id`, `student_id`, `(advisor_id, status)`
+- `group_invitations`: `group_id`, `(invited_student_id, status)`, `invited_by_student_id`
+- `notifications`: `(group_id, created_at)`, `(student_id, created_at)`, `(advisor_id, created_at)`
+- `comments`: `(student_id, created_at)`, `(document_id, created_at)`
+- `approvals`: `(student_id, created_at)`, `(document_id, created_at)`, `(group_id, created_at)`, `(reviewer_id, status)`
 - `user_sessions`: `(user_type, user_id)`, `expires_at`
 - `password_reset_tokens`: Unique `token_hash`, `(user_type, user_id)`, `expires_at`
 - `notification_reads`: `(reader_type, reader_id)`
@@ -334,6 +346,7 @@ erDiagram
 - ไม่ควรแก้ Foreign Key ด้วยการลบไฟล์ `.ibd` โดยตรง
 - สำรองฐานข้อมูล, `database/app-data.json` และโฟลเดอร์ `uploads` ก่อนย้ายเครื่องหรืออัปเกรด
 - ใช้ `install.bat` เพื่ออัปเกรด Schema เดิม เพราะมีขั้นตอนตรวจและซ่อมความสัมพันธ์อัตโนมัติ
+- การสร้าง Column, Index และ Foreign Key รองรับกรณีมีหลาย Request เริ่ม Migration พร้อมกัน โดยจะตรวจผลซ้ำก่อนรายงานข้อผิดพลาด
 
 ## การตรวจสอบระบบ
 
@@ -393,6 +406,29 @@ PUBLIC_CATALOG_OK
 powershell -ExecutionPolicy Bypass -File tests\smoke.ps1
 ```
 
+### Health Check
+
+ใช้ Endpoint ต่อไปนี้ตรวจความพร้อมของ PHP, ฐานข้อมูล และ Storage โดยไม่ต้องเข้าสู่ระบบ:
+
+```text
+http://localhost/RMUTP-SeniorProject/api/health.php
+https://ชื่อโปรเจกต์.vercel.app/api/health.php
+```
+
+ผลปกติจะเป็น HTTP `200` และมีรูปแบบดังนี้:
+
+```json
+{
+  "status": "ok",
+  "checks": {
+    "database": true,
+    "storage": true
+  }
+}
+```
+
+ถ้า Database หรือ Storage ใช้งานไม่ได้ ระบบจะตอบ HTTP `503` พร้อม `status: "degraded"` และเขียนรายละเอียดที่ไม่เปิดเผยรหัสผ่านลง Error Log
+
 ## การแก้ปัญหาที่พบบ่อย
 
 | ปัญหา | แนวทางตรวจสอบ |
@@ -402,6 +438,7 @@ powershell -ExecutionPolicy Bypass -File tests\smoke.ps1
 | `MySQL shutdown unexpectedly` | ตรวจพอร์ต 3306 และ `C:\xampp\mysql\data\mysql_error.log` |
 | `Security token expired` | กด `Ctrl + F5` หรือออกจากระบบแล้วเข้าสู่ระบบใหม่ |
 | อัปโหลด PDF ไม่ได้ | ตรวจชนิดไฟล์ ขนาดไม่เกิน 20 MB และสิทธิ์เขียนโฟลเดอร์ `uploads` |
+| Vercel Health Check เป็น `degraded` | ตรวจ `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`, `STORAGE_DRIVER` และ `BLOB_READ_WRITE_TOKEN` |
 | รายชื่ออาจารย์ไม่ขึ้น | ตรวจว่าอาจารย์ Active และคณะ/สาขาตรงกับนักศึกษา |
 | ส่ง Draft ไม่ได้ | Proposal ต้องผ่าน และ Draft ก่อนหน้าต้องอนุมัติตามลำดับ |
 | ส่ง Complete ไม่ได้ | Draft บทที่ 1-5 ต้องผ่านครบทั้งหมด |
@@ -413,6 +450,7 @@ powershell -ExecutionPolicy Bypass -File tests\smoke.ps1
 - เปลี่ยนบัญชีและรหัสผ่านเริ่มต้นก่อนใช้งานจริง
 - ห้าม Commit `.env` ที่มีข้อมูลจริงขึ้น Repository สาธารณะ
 - เก็บรหัสผ่านด้วย Password hash และเก็บ Reset token เฉพาะ SHA-256 hash
+- บัญชีนักศึกษาเดิมที่ยังใช้รหัสนักศึกษาเป็นรหัสเริ่มต้นจะถูกย้ายเป็น Password hash อัตโนมัติหลัง Login สำเร็จครั้งแรก
 - สำรองฐานข้อมูล `rmutp_senior_project`, `database/app-data.json` และ `uploads` เป็นประจำ
 - ปิด `APP_DEBUG` และใช้ HTTPS เมื่อขึ้น Production
 
@@ -555,7 +593,20 @@ ADMIN_PASSWORD=เปลี่ยนเป็นรหัสผ่านที�
 ```
 
 4. Deploy ผ่าน Vercel Dashboard หรือรัน `.\wed.bat` จากโฟลเดอร์โปรเจกต์
-5. เปิดหน้า `/login.php` แล้วทดสอบ Login, อัปโหลดรูป, อัปโหลด Proposal/Draft/Complete, Preview และ Download
+5. เปิดหน้า `/api/health.php` และตรวจว่า Database กับ Storage เป็น `true`
+6. เปิดหน้า `/login.php` แล้วทดสอบ Login, อัปโหลดรูป, อัปโหลด Proposal/Draft/Complete, Preview และ Download
+
+### อัปเกรดฐานข้อมูล Production เดิม
+
+สำหรับฐานข้อมูลที่ติดตั้งจาก Schema รุ่นก่อน ให้ทำในช่วงที่ไม่มีผู้ใช้งาน:
+
+1. สำรอง Cloud MySQL/Railway Database ก่อนทุกครั้ง
+2. ตั้ง `DB_AUTO_MIGRATE=true` ใน Vercel Production ชั่วคราว
+3. Deploy หนึ่งครั้ง แล้วเปิด `/api/health.php` เพื่อตรวจว่าได้ HTTP `200`
+4. รัน `buildadmin.bat --check --no-pause` จากเครื่องที่เชื่อมฐานข้อมูลชุดเดียวกัน หากมี Environment พร้อมใช้งาน
+5. เปลี่ยน `DB_AUTO_MIGRATE=false` และ Deploy อีกครั้ง เพื่อลดคำสั่งตรวจ Schema ใน Request ปกติ
+
+หาก Health Check ตอบ `503` ห้ามลบ Foreign Key หรือไฟล์ฐานข้อมูลด้วยตนเอง ให้ตรวจ Vercel Function Logs ก่อน เพราะข้อมูลเดิมที่อ้างถึง Record ที่ไม่มีอยู่จะทำให้ Migration หยุดเพื่อป้องกันข้อมูลเสียหาย
 
 ไฟล์ PDF และรูปโปรไฟล์ในโหมด Vercel จะส่งตรงจาก Browser ไปยัง Private Blob Store ระบบ PHP จะออก Token แบบอายุสั้นและตรวจไฟล์ก่อนบันทึกข้อมูล จึงรองรับ PDF สูงสุด 20 MB โดยไม่เขียนไฟล์ลงดิสก์ถาวรของ Function การดาวน์โหลด Complete ยังคงสร้างสำเนา Watermark ชั่วคราวและลบทิ้งหลังส่งไฟล์เหมือนเดิม
 
