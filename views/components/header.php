@@ -20,7 +20,7 @@
     <link href="<?= e(versioned_asset_url('css/theme.css')) ?>" rel="stylesheet">
     <link href="<?= e(versioned_asset_url('css/style.css')) ?>" rel="stylesheet">
     <link href="<?= e(versioned_asset_url('css/responsive.css')) ?>" rel="stylesheet">
-    <?php if (($page ?? '') === 'login'): ?>
+    <?php if (in_array(($page ?? ''), ['login', 'forgot-password', 'reset-password'], true)): ?>
         <link href="<?= e(versioned_asset_url('css/public-catalog.css')) ?>" rel="stylesheet">
     <?php endif; ?>
 </head>

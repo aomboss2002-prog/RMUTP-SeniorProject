@@ -231,7 +231,7 @@ function database_schema_is_current(PDO $pdo, string $version): bool
         'idx_notifications_advisor_created', 'idx_comments_student_created',
         'idx_comments_document_created', 'idx_approvals_student_created',
         'idx_approvals_document_created', 'idx_approvals_group_created',
-        'idx_approvals_reviewer_status',
+        'idx_approvals_reviewer_status', 'idx_password_reset_ip_created',
     ];
     $indexPlaceholders = implode(',', array_fill(0, count($requiredIndexes), '?'));
     $indexStatement = $pdo->prepare(
@@ -293,7 +293,7 @@ function database_connection(): PDO
         return $pdo;
     }
 
-    $schemaVersion = '20260829_02_stability';
+    $schemaVersion = '20260829_03_password_reset';
     if (database_schema_is_current($pdo, $schemaVersion)) {
         return $pdo;
     }
@@ -394,7 +394,8 @@ function database_connection(): PDO
         expires_at DATETIME NOT NULL,
         used_at DATETIME NULL,
         INDEX idx_password_reset_user (user_type, user_id),
-        INDEX idx_password_reset_expires (expires_at)
+        INDEX idx_password_reset_expires (expires_at),
+        INDEX idx_password_reset_ip_created (requested_ip, created_at)
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
     $pdo->exec("CREATE TABLE IF NOT EXISTS notification_reads (
         notification_id VARCHAR(20) NOT NULL,
@@ -481,6 +482,7 @@ function database_connection(): PDO
     ensure_database_index($pdo, 'approvals', 'idx_approvals_document_created', '`document_id`, `created_at`');
     ensure_database_index($pdo, 'approvals', 'idx_approvals_group_created', '`group_id`, `created_at`');
     ensure_database_index($pdo, 'approvals', 'idx_approvals_reviewer_status', '`reviewer_id`, `status`');
+    ensure_database_index($pdo, 'password_reset_tokens', 'idx_password_reset_ip_created', '`requested_ip`, `created_at`');
 
     ensure_database_foreign_key($pdo, 'students', 'advisor_id', 'advisors', 'fk_students_advisor', 'SET NULL');
     ensure_database_foreign_key($pdo, 'projects', 'student_id', 'students', 'fk_projects_student', 'SET NULL');

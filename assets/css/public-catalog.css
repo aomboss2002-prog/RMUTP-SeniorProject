@@ -187,6 +187,38 @@
 .login-options { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: .72rem; }
 .login-options a { color: var(--archive-blue-800); font-weight: 700; text-decoration: none; }
 .login-options a:hover { text-decoration: underline; }
+.forgot-password-toggle { padding: 0; border: 0; color: var(--archive-blue-800); background: transparent; font: inherit; font-weight: 700; cursor: pointer; }
+.forgot-password-toggle:hover { text-decoration: underline; }
+.login-forgot-panel { margin-top: 18px; padding: 17px; border: 1px solid #cfdaea; border-radius: 12px; background: linear-gradient(145deg, #f8fbff, #fff); animation: loginForgotReveal .2s ease both; }
+.login-forgot-panel__head { display: flex; align-items: flex-start; gap: 11px; margin-bottom: 14px; }
+.login-forgot-panel__icon { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border-radius: 9px; color: #0b3c8c; background: #e7f0ff; }
+.login-forgot-panel h3 { margin: 0 0 3px; color: #17233d; font-size: .9rem; }
+.login-forgot-panel p { margin: 0; color: #68778d; font-size: .7rem; line-height: 1.5; }
+.login-forgot-form { display: grid; gap: 8px; }
+.login-forgot-form > label { color: #344157; font-size: .72rem; font-weight: 800; }
+.login-forgot-submit { display: flex; min-height: 40px; align-items: center; justify-content: center; gap: 8px; margin-top: 3px; border: 1px solid #0b3c8c; border-radius: 8px; color: #fff; background: #0b3c8c; font-size: .76rem; font-weight: 800; }
+.login-forgot-submit:hover { background: #174f9f; }
+.login-forgot-submit:disabled { cursor: wait; opacity: .65; }
+.login-forgot-full-link { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; color: #64748b; font-size: .68rem; font-weight: 700; text-decoration: none; }
+.login-forgot-full-link:hover { color: #0b3c8c; }
+@keyframes loginForgotReveal { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+
+.password-recovery-body { min-height: 100vh; background: radial-gradient(circle at 15% 15%, rgba(40, 112, 210, .12), transparent 34%), #f4f7fb; }
+.password-recovery-shell { min-height: 100vh; display: grid; place-items: center; padding: 32px 18px; }
+.password-recovery-card { width: min(100%, 480px); padding: 34px; border: 1px solid #d8e1ef; border-top: 4px solid #0b3c8c; border-radius: 18px; background: #fff; box-shadow: 0 24px 60px rgba(22, 45, 83, .14); }
+.password-recovery-brand { display: inline-flex; align-items: center; gap: 10px; margin-bottom: 30px; color: #17233d; font-weight: 800; text-decoration: none; }
+.password-recovery-brand img { width: 36px; height: 42px; object-fit: contain; }
+.password-recovery-icon { display: grid; place-items: center; width: 54px; height: 54px; margin-bottom: 18px; border-radius: 16px; background: #eaf2ff; color: #0b3c8c; font-size: 1.3rem; }
+.password-recovery-card h1 { margin: 4px 0 10px; color: #17233d; font-size: clamp(1.7rem, 5vw, 2.2rem); }
+.password-recovery-copy { margin: 0 0 24px; color: #64748b; line-height: 1.7; }
+.password-recovery-form { display: grid; gap: 12px; }
+.password-recovery-form > label { color: #263650; font-size: .82rem; font-weight: 800; }
+.password-recovery-form .public-login-submit { margin-top: 8px; }
+.password-recovery-message { margin-top: 18px; padding: 12px 14px; border-radius: 10px; font-size: .84rem; line-height: 1.55; }
+.password-recovery-message.is-success { border: 1px solid #a7e3c5; background: #ecfdf5; color: #166534; }
+.password-recovery-message.is-error { border: 1px solid #fecaca; background: #fef2f2; color: #b91c1c; }
+.password-recovery-back { display: inline-flex; align-items: center; gap: 8px; margin-top: 22px; color: #0b3c8c; font-size: .82rem; font-weight: 800; text-decoration: none; }
+.password-recovery-back:hover { text-decoration: underline; }
 .remember-option { display: inline-flex; align-items: center; gap: 7px; color: var(--archive-slate); cursor: pointer; }
 .remember-option input { width: 15px; height: 15px; margin: 0; accent-color: var(--archive-blue-800); }
 .public-login-submit { display: flex; width: 100%; min-height: 46px; align-items: center; justify-content: space-between; padding: 0 17px; border: 1px solid var(--archive-navy); border-radius: 8px 8px 3px 8px; color: #fff; background: var(--archive-navy); font-size: .83rem; font-weight: 800; box-shadow: 0 9px 20px rgba(19,35,61,.16); transition: background .18s ease, transform .18s ease; }

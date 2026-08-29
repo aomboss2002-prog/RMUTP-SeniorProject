@@ -21,6 +21,8 @@ function route_url(string $page, array $params = []): string
 {
     $routes = [
         'login' => 'login.php',
+        'forgot-password' => 'forgot-password.php',
+        'reset-password' => 'reset-password.php',
         'dashboard' => 'admin/dashboard.php', 'students' => 'admin/students/index.php',
         'student-add' => 'admin/students/add.php', 'student-detail' => 'admin/students/detail.php',
         'student-edit' => 'admin/students/edit.php', 'advisors' => 'admin/advisors/index.php',
@@ -137,6 +139,8 @@ function app_pages(): array
     return [
         '401' => ['title' => 'Unauthorized', 'file' => '401.php', 'icon' => 'fa-lock'],
         '422' => ['title' => 'Unprocessable request', 'file' => '422.php', 'icon' => 'fa-triangle-exclamation'],
+        'forgot-password' => ['title' => 'ลืมรหัสผ่าน', 'file' => 'forgot-password.php', 'icon' => 'fa-unlock-keyhole'],
+        'reset-password' => ['title' => 'ตั้งรหัสผ่านใหม่', 'file' => 'reset-password.php', 'icon' => 'fa-key'],
         'login' => ['title' => 'เข้าสู่ระบบ', 'file' => 'login.php', 'icon' => 'fa-right-to-bracket'],
         'dashboard' => ['title' => 'แดชบอร์ด', 'file' => 'dashboard.php', 'icon' => 'fa-gauge-high'],
         'students' => ['title' => 'รายชื่อนักศึกษา', 'file' => 'students.php', 'icon' => 'fa-user-graduate'],

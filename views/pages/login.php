@@ -127,12 +127,34 @@
                             <input id="loginRemember" name="remember" type="checkbox" value="1">
                             <span>จดจำการเข้าสู่ระบบ</span>
                         </label>
+                        <button class="forgot-password-toggle" id="toggleForgotPassword" type="button" aria-expanded="false" aria-controls="loginForgotPasswordPanel">ลืมรหัสผ่าน?</button>
                     </div>
                     <button class="public-login-submit" type="submit">
                         <span>เข้าสู่ระบบ</span>
                         <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
                     </button>
                 </form>
+
+                <section class="login-forgot-panel" id="loginForgotPasswordPanel" aria-labelledby="loginForgotPasswordHeading" hidden>
+                    <div class="login-forgot-panel__head">
+                        <span class="login-forgot-panel__icon"><i class="fa-solid fa-key" aria-hidden="true"></i></span>
+                        <div>
+                            <h3 id="loginForgotPasswordHeading">ตั้งรหัสผ่านใหม่</h3>
+                            <p>กรอกอีเมลของนักศึกษาหรืออาจารย์ ลิงก์จะใช้งานได้ 15 นาที</p>
+                        </div>
+                    </div>
+                    <form id="loginForgotPasswordForm" class="login-forgot-form">
+                        <input type="hidden" name="action" value="request">
+                        <label for="loginResetEmail">อีเมล</label>
+                        <div class="login-input">
+                            <i class="fa-regular fa-envelope" aria-hidden="true"></i>
+                            <input id="loginResetEmail" name="email" type="email" autocomplete="email" required placeholder="name@rmutp.ac.th">
+                        </div>
+                        <button class="login-forgot-submit" type="submit"><span>ส่งลิงก์ทางอีเมล</span><i class="fa-solid fa-paper-plane" aria-hidden="true"></i></button>
+                    </form>
+                    <div id="passwordResetMessage" class="password-recovery-message" role="status" aria-live="polite" hidden></div>
+                    <a class="login-forgot-full-link" href="<?= e(route_url('forgot-password')) ?>">เปิดหน้าลืมรหัสผ่านแบบเต็ม <i class="fa-solid fa-arrow-up-right-from-square"></i></a>
+                </section>
 
                 <div class="advisor-entry" hidden>
                     <span>สำหรับอาจารย์ที่ปรึกษา</span>
@@ -159,5 +181,6 @@
 <script defer src="<?= e(versioned_asset_url('vendor/sweetalert2/sweetalert2.all.min.js')) ?>"></script>
 <script defer src="<?= e(versioned_asset_url('js/app.js')) ?>"></script>
 <script defer src="<?= e(versioned_asset_url('js/public-catalog.js')) ?>"></script>
+<script defer src="<?= e(versioned_asset_url('js/password-reset.js')) ?>"></script>
 </body>
 </html>

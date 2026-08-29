@@ -301,7 +301,8 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
     expires_at DATETIME NOT NULL,
     used_at DATETIME NULL,
     INDEX idx_password_reset_user (user_type, user_id),
-    INDEX idx_password_reset_expires (expires_at)
+    INDEX idx_password_reset_expires (expires_at),
+    INDEX idx_password_reset_ip_created (requested_ip, created_at)
 );
 
 CREATE TABLE IF NOT EXISTS notification_reads (

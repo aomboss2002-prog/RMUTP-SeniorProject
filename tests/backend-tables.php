@@ -7,7 +7,7 @@ $pdo = database_connection();
 $errors = [];
 $requiredTables = [
     'user_sessions' => ['PRIMARY', 'idx_user_sessions_user', 'idx_user_sessions_expires'],
-    'password_reset_tokens' => ['PRIMARY', 'token_hash', 'idx_password_reset_user', 'idx_password_reset_expires'],
+    'password_reset_tokens' => ['PRIMARY', 'token_hash', 'idx_password_reset_user', 'idx_password_reset_expires', 'idx_password_reset_ip_created'],
     'notification_reads' => ['PRIMARY', 'idx_notification_reads_reader'],
 ];
 

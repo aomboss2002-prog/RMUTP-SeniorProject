@@ -127,6 +127,10 @@ if ($page === 'login') {
     require __DIR__ . '/views/pages/login.php';
     exit;
 }
+if (in_array($page, ['forgot-password', 'reset-password'], true)) {
+    require __DIR__ . '/views/pages/' . $meta['file'];
+    exit;
+}
 
 if (str_starts_with($page, 'portal-') && ($_SESSION['app_user']['role'] ?? '') !== 'student') {
     header('Location: ' . route_url('login'));
@@ -135,7 +139,7 @@ if (str_starts_with($page, 'portal-') && ($_SESSION['app_user']['role'] ?? '') !
 
 $isAdminPage = !str_starts_with($page, 'portal-')
     && !str_starts_with($page, 'advisor-')
-    && !in_array($page, ['login', '404', '403', '500'], true);
+    && !in_array($page, ['login', 'forgot-password', 'reset-password', '404', '403', '500'], true);
 if ($isAdminPage && ($_SESSION['app_user']['role'] ?? '') !== 'admin') {
     header('Location: ' . route_url('login'));
     exit;

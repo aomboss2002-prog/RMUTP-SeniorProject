@@ -611,3 +611,30 @@ ADMIN_PASSWORD=เปลี่ยนเป็นรหัสผ่านที�
 ไฟล์ PDF และรูปโปรไฟล์ในโหมด Vercel จะส่งตรงจาก Browser ไปยัง Private Blob Store ระบบ PHP จะออก Token แบบอายุสั้นและตรวจไฟล์ก่อนบันทึกข้อมูล จึงรองรับ PDF สูงสุด 20 MB โดยไม่เขียนไฟล์ลงดิสก์ถาวรของ Function การดาวน์โหลด Complete ยังคงสร้างสำเนา Watermark ชั่วคราวและลบทิ้งหลังส่งไฟล์เหมือนเดิม
 
 > ห้าม commit `.env`, `BLOB_READ_WRITE_TOKEN`, รหัสผ่านฐานข้อมูล หรือรหัสผ่านผู้ดูแลระบบลง Git
+
+## ลืมรหัสผ่านทางอีเมล
+
+นักศึกษาและอาจารย์กด `ลืมรหัสผ่าน?` จากหน้าเข้าสู่ระบบได้ ระบบจะส่งลิงก์ตั้งรหัสผ่านใหม่ที่ใช้ได้ครั้งเดียวและหมดอายุภายใน **15 นาที** ระบบไม่เก็บ Token จริงในฐานข้อมูล แต่เก็บเฉพาะค่า SHA-256 พร้อมยกเลิก Token เดิมเมื่อมีการขอลิงก์ใหม่
+
+สำหรับ XAMPP ใช้โหมดทดสอบที่บันทึกลิงก์ลง Log โดยไม่ส่งอีเมลจริง:
+
+```env
+MAIL_TRANSPORT=log
+```
+
+ดูอีเมลทดสอบล่าสุดด้วย PowerShell:
+
+```powershell
+Get-Content "$env:TEMP\rmutp-password-reset-mail.log" -Tail 1
+```
+
+สำหรับ Production ให้ยืนยันโดเมนผู้ส่งกับ Resend และเพิ่ม Environment Variables:
+
+```env
+APP_URL=https://ชื่อโปรเจกต์.vercel.app
+MAIL_TRANSPORT=resend
+RESEND_API_KEY=re_xxxxxxxxxxxxxxxxx
+MAIL_FROM=RMUTP Senior Project <noreply@โดเมนที่ยืนยันแล้ว>
+```
+
+`APP_URL` ต้องตรงกับ URL จริงเพื่อให้ลิงก์ในอีเมลกลับมายังระบบถูกต้อง ห้าม Commit `RESEND_API_KEY` ลง Git บัญชี Admin ซึ่งอ่านจาก `.env` จะไม่รีเซ็ตผ่านอีเมล ให้เปลี่ยน `ADMIN_PASSWORD` ใน Environment Variables แทน
