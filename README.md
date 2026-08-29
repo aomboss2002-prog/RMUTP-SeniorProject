@@ -637,4 +637,4 @@ RESEND_API_KEY=re_xxxxxxxxxxxxxxxxx
 MAIL_FROM=RMUTP Senior Project <noreply@โดเมนที่ยืนยันแล้ว>
 ```
 
-`APP_URL` ต้องตรงกับ URL จริงเพื่อให้ลิงก์ในอีเมลกลับมายังระบบถูกต้อง ห้าม Commit `RESEND_API_KEY` ลง Git บัญชี Admin ซึ่งอ่านจาก `.env` จะไม่รีเซ็ตผ่านอีเมล ให้เปลี่ยน `ADMIN_PASSWORD` ใน Environment Variables แทน
+`APP_URL` ต้องตรงกับ URL จริงเพื่อให้ลิงก์ในอีเมลกลับมายังระบบถูกต้อง ห้าม Commit `RESEND_API_KEY` ลง Git หากต้องการให้ Admin รีเซ็ตรหัสผ่านทางอีเมล ให้กำหนด `ADMIN_RECOVERY_EMAIL` เป็นอีเมลปลายทาง โดยยังใช้ `ADMIN_EMAIL` เป็นชื่อบัญชีสำหรับเข้าสู่ระบบเหมือนเดิม

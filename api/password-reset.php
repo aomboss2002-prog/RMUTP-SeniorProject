@@ -26,6 +26,17 @@ function password_reset_payload(): array
 /** @return array{type:string,id:string,name:string,email:string}|null */
 function password_reset_account(array $data, string $email): ?array
 {
+    $config = env_config();
+    $adminEmail = strtolower(trim((string) ($config['ADMIN_EMAIL'] ?? '')));
+    $adminRecoveryEmail = strtolower(trim((string) ($config['ADMIN_RECOVERY_EMAIL'] ?? '')));
+    if ($adminRecoveryEmail !== '' && ($email === $adminEmail || $email === $adminRecoveryEmail)) {
+        return [
+            'type' => 'admin',
+            'id' => 'admin',
+            'name' => (string) ($data['profile']['name'] ?? 'RMUTP Administrator'),
+            'email' => $adminRecoveryEmail,
+        ];
+    }
     foreach ($data['students'] ?? [] as $student) {
         if (strtolower((string) ($student['email'] ?? '')) === $email) {
             return [
@@ -79,6 +90,16 @@ if ($action === 'request') {
     $email = strtolower(trim((string) ($payload['email'] ?? '')));
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         password_reset_response(['success' => false, 'message' => 'กรุณากรอกอีเมลให้ถูกต้อง'], 422);
+    }
+    if (mailer_transport() === 'resend') {
+        $mailConfig = env_config();
+        if (trim((string) ($mailConfig['RESEND_API_KEY'] ?? '')) === ''
+            || trim((string) ($mailConfig['MAIL_FROM'] ?? '')) === '') {
+            password_reset_response([
+                'success' => false,
+                'message' => 'ระบบส่งอีเมลยังไม่ได้ตั้งค่า กรุณาแจ้งผู้ดูแลให้กำหนด RESEND_API_KEY และ MAIL_FROM',
+            ], 503);
+        }
     }
     $isLogTransport = mailer_transport() === 'log';
     $genericMessage = $isLogTransport
@@ -174,13 +195,18 @@ if ($action === 'reset') {
             password_reset_response(['success' => false, 'message' => 'ลิงก์ตั้งรหัสผ่านไม่ถูกต้องหรือหมดอายุแล้ว'], 422);
         }
 
-        $collection = ($reset['user_type'] ?? '') === 'advisor' ? 'advisors' : 'students';
         $accountFound = false;
-        foreach ($data[$collection] ?? [] as $index => $account) {
-            if (($account['id'] ?? '') === ($reset['user_id'] ?? '')) {
-                $data[$collection][$index]['password_hash'] = secure_password_hash($password);
-                $accountFound = true;
-                break;
+        if (($reset['user_type'] ?? '') === 'admin' && ($reset['user_id'] ?? '') === 'admin') {
+            $data['profile']['admin_password_hash'] = secure_password_hash($password);
+            $accountFound = true;
+        } else {
+            $collection = ($reset['user_type'] ?? '') === 'advisor' ? 'advisors' : 'students';
+            foreach ($data[$collection] ?? [] as $index => $account) {
+                if (($account['id'] ?? '') === ($reset['user_id'] ?? '')) {
+                    $data[$collection][$index]['password_hash'] = secure_password_hash($password);
+                    $accountFound = true;
+                    break;
+                }
             }
         }
         if (!$accountFound) throw new RuntimeException('Password reset account no longer exists.');

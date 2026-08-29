@@ -70,9 +70,12 @@ function authenticate_user(array $payload, array &$data): ?array
     $password = trim((string) ($payload['password'] ?? ''));
 
     $config = env_config();
-    if ($email === ($config['ADMIN_EMAIL'] ?? '')
-        && ($config['ADMIN_PASSWORD'] ?? '') !== ''
-        && hash_equals((string) $config['ADMIN_PASSWORD'], $password)) {
+    $adminPasswordHash = (string) ($data['profile']['admin_password_hash'] ?? '');
+    $adminPasswordValid = $adminPasswordHash !== ''
+        ? secure_password_verify($password, $adminPasswordHash)
+        : (($config['ADMIN_PASSWORD'] ?? '') !== ''
+            && hash_equals((string) $config['ADMIN_PASSWORD'], $password));
+    if ($email === ($config['ADMIN_EMAIL'] ?? '') && $adminPasswordValid) {
         return [
             'role' => 'admin',
             'id' => 'admin',
