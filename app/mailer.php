@@ -78,7 +78,9 @@ function send_password_reset_email(string $recipient, string $name, string $rese
     $response = curl_exec($handle);
     $status = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
     $error = curl_error($handle);
-    curl_close($handle);
+    // CurlHandle is released automatically. Calling curl_close() emits a
+    // deprecation warning on PHP 8.5, which would corrupt JSON API responses.
+    unset($handle);
     if ($response === false || $status < 200 || $status >= 300) {
         throw new RuntimeException('Email delivery failed' . ($error !== '' ? ': ' . $error : " (HTTP {$status})"));
     }

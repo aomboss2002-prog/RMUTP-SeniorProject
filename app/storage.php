@@ -128,7 +128,7 @@ function storage_put_uploaded_file(string $temporaryFile, string $namespace, str
     $response = curl_exec($handle);
     $status = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
     $error = curl_error($handle);
-    curl_close($handle);
+    unset($handle);
     fclose($stream);
     if ($response === false || $status < 200 || $status >= 300) {
         throw new RuntimeException('Vercel Blob upload failed' . ($error !== '' ? ': ' . $error : " (HTTP {$status})"));
@@ -146,7 +146,7 @@ function storage_exists(string $namespace, string $filename): bool
         ]);
         curl_exec($handle);
         $status = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
-        curl_close($handle);
+        unset($handle);
         return $status >= 200 && $status < 300;
     } catch (Throwable) {
         return false;
@@ -187,7 +187,7 @@ function storage_materialize(string $namespace, string $filename): array
     ]);
     $result = curl_exec($handle);
     $status = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
-    curl_close($handle);
+    unset($handle);
     fclose($stream);
     if ($result === false || $status < 200 || $status >= 300) {
         @unlink($temporary);
