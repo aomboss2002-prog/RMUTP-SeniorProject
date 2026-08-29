@@ -64,15 +64,26 @@ require_csrf_token();
 
 $payload = password_reset_payload();
 $action = strtolower(trim((string) ($payload['action'] ?? 'request')));
-$pdo = database_connection();
-$data = load_data();
+try {
+    $pdo = database_connection();
+    $data = load_data();
+} catch (Throwable $exception) {
+    error_log('Password reset database connection failed: ' . $exception->getMessage());
+    password_reset_response([
+        'success' => false,
+        'message' => 'ฐานข้อมูลยังไม่พร้อมใช้งาน กรุณาเปิด MySQL แล้วลองใหม่อีกครั้ง',
+    ], 503);
+}
 
 if ($action === 'request') {
     $email = strtolower(trim((string) ($payload['email'] ?? '')));
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         password_reset_response(['success' => false, 'message' => 'กรุณากรอกอีเมลให้ถูกต้อง'], 422);
     }
-    $genericMessage = 'หากอีเมลนี้อยู่ในระบบ เราได้ส่งลิงก์ตั้งรหัสผ่านใหม่ให้แล้ว ลิงก์มีอายุ 15 นาที';
+    $isLogTransport = mailer_transport() === 'log';
+    $genericMessage = $isLogTransport
+        ? 'ระบบอยู่ในโหมดทดสอบ จึงบันทึกลิงก์ไว้ในไฟล์ Log และยังไม่ได้ส่งเข้าอีเมลจริง'
+        : 'หากอีเมลนี้อยู่ในระบบ เราได้ส่งลิงก์ตั้งรหัสผ่านใหม่ให้แล้ว ลิงก์มีอายุ 15 นาที';
     $ipAddress = substr((string) ($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45);
 
     $pdo->prepare('DELETE FROM password_reset_tokens WHERE expires_at < DATE_SUB(NOW(), INTERVAL 1 DAY) OR used_at < DATE_SUB(NOW(), INTERVAL 1 DAY)')->execute();
