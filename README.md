@@ -637,4 +637,19 @@ RESEND_API_KEY=re_xxxxxxxxxxxxxxxxx
 MAIL_FROM=RMUTP Senior Project <noreply@โดเมนที่ยืนยันแล้ว>
 ```
 
-`APP_URL` ต้องตรงกับ URL จริงเพื่อให้ลิงก์ในอีเมลกลับมายังระบบถูกต้อง ห้าม Commit `RESEND_API_KEY` ลง Git หากต้องการให้ Admin รีเซ็ตรหัสผ่านทางอีเมล ให้กำหนด `ADMIN_RECOVERY_EMAIL` เป็นอีเมลปลายทาง โดยยังใช้ `ADMIN_EMAIL` เป็นชื่อบัญชีสำหรับเข้าสู่ระบบเหมือนเดิม
+หากยังไม่มี Custom Domain สามารถใช้ Gmail SMTP ได้โดยเปิดการยืนยันแบบ 2 ขั้นตอนของบัญชี Google และสร้าง **App Password** สำหรับระบบ จากนั้นเพิ่ม Environment Variables ใน Vercel Production:
+
+```env
+APP_URL=https://ชื่อโปรเจกต์.vercel.app
+MAIL_TRANSPORT=smtp
+MAIL_FROM=RMUTP Senior Project <บัญชีผู้ส่ง@gmail.com>
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_ENCRYPTION=ssl
+SMTP_USERNAME=บัญชีผู้ส่ง@gmail.com
+SMTP_PASSWORD=Google-App-Password-16-ตัวอักษร
+```
+
+กำหนด `SMTP_PASSWORD` เป็นชนิด **Secret** และห้ามใช้รหัสผ่าน Gmail ปกติ ระบบจะส่งไปยังอีเมลของนักศึกษาและอาจารย์จากฐานข้อมูลโดยอัตโนมัติ ส่วน `ADMIN_RECOVERY_EMAIL` ใช้เฉพาะปลายทางกู้คืนของบัญชี Admin เท่านั้น
+
+`APP_URL` ต้องตรงกับ URL จริงเพื่อให้ลิงก์ในอีเมลกลับมายังระบบถูกต้อง ห้าม Commit `RESEND_API_KEY`, `SMTP_PASSWORD` หรือ Secret อื่นลง Git หากต้องการให้ Admin รีเซ็ตรหัสผ่านทางอีเมล ให้กำหนด `ADMIN_RECOVERY_EMAIL` เป็นอีเมลปลายทาง โดยยังใช้ `ADMIN_EMAIL` เป็นชื่อบัญชีสำหรับเข้าสู่ระบบเหมือนเดิม

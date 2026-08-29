@@ -91,7 +91,8 @@ if ($action === 'request') {
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         password_reset_response(['success' => false, 'message' => 'กรุณากรอกอีเมลให้ถูกต้อง'], 422);
     }
-    if (mailer_transport() === 'resend') {
+    $mailTransport = mailer_transport();
+    if ($mailTransport === 'resend') {
         $mailConfig = env_config();
         if (trim((string) ($mailConfig['RESEND_API_KEY'] ?? '')) === ''
             || trim((string) ($mailConfig['MAIL_FROM'] ?? '')) === '') {
@@ -101,7 +102,19 @@ if ($action === 'request') {
             ], 503);
         }
     }
-    $isLogTransport = mailer_transport() === 'log';
+    if ($mailTransport === 'smtp') {
+        $mailConfig = env_config();
+        $requiredSmtpKeys = ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USERNAME', 'SMTP_PASSWORD', 'MAIL_FROM'];
+        foreach ($requiredSmtpKeys as $requiredSmtpKey) {
+            if (trim((string) ($mailConfig[$requiredSmtpKey] ?? '')) === '') {
+                password_reset_response([
+                    'success' => false,
+                    'message' => 'ระบบ Gmail SMTP ยังตั้งค่าไม่ครบ กรุณาแจ้งผู้ดูแลให้ตรวจ SMTP และ Google App Password',
+                ], 503);
+            }
+        }
+    }
+    $isLogTransport = $mailTransport === 'log';
     $genericMessage = $isLogTransport
         ? 'ระบบอยู่ในโหมดทดสอบ จึงบันทึกลิงก์ไว้ในไฟล์ Log และยังไม่ได้ส่งเข้าอีเมลจริง'
         : 'หากอีเมลนี้อยู่ในระบบ เราได้ส่งลิงก์ตั้งรหัสผ่านใหม่ให้แล้ว ลิงก์มีอายุ 15 นาที';
