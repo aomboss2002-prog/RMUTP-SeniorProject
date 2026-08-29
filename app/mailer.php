@@ -83,6 +83,11 @@ function send_email_via_smtp(
     if (!in_array($encryption, ['ssl', 'tls'], true)) {
         throw new RuntimeException('SMTP_ENCRYPTION must be ssl or tls.');
     }
+    // Gmail deliverability is best when the visible From address matches the
+    // authenticated mailbox. Reject accidental spoofing/misalignment early.
+    if (strcasecmp($host, 'smtp.gmail.com') === 0 && strcasecmp($sender['email'], $username) !== 0) {
+        throw new RuntimeException('MAIL_FROM must match SMTP_USERNAME when Gmail SMTP is used.');
+    }
 
     $context = stream_context_create(['ssl' => [
         'verify_peer' => true,
@@ -116,17 +121,19 @@ function send_email_via_smtp(
         smtp_command($socket, 'DATA', [354]);
 
         $boundary = 'rmutp-' . bin2hex(random_bytes(12));
-        $messageId = bin2hex(random_bytes(16)) . '@' . $clientName;
+        $deliveryId = 'smtp-' . bin2hex(random_bytes(16));
         $fromHeader = $sender['name'] !== ''
             ? '=?UTF-8?B?' . base64_encode($sender['name']) . '?= <' . $sender['email'] . '>'
             : $sender['email'];
         $headers = [
             'Date: ' . date(DATE_RFC2822),
-            'Message-ID: <' . $messageId . '>',
             'From: ' . $fromHeader,
             'To: <' . $recipient . '>',
+            'Reply-To: <' . $sender['email'] . '>',
             'Subject: =?UTF-8?B?' . base64_encode(str_replace(["\r", "\n"], '', $subject)) . '?=',
             'MIME-Version: 1.0',
+            'Auto-Submitted: auto-generated',
+            'X-Auto-Response-Suppress: All',
             'Content-Type: multipart/alternative; boundary="' . $boundary . '"',
         ];
         $body = '--' . $boundary . "\r\n"
@@ -142,7 +149,7 @@ function send_email_via_smtp(
         }
         smtp_read_response($socket, [250]);
         smtp_command($socket, 'QUIT', [221]);
-        return ['id' => $messageId, 'transport' => 'smtp'];
+        return ['id' => $deliveryId, 'transport' => 'smtp'];
     } finally {
         fclose($socket);
     }

@@ -127,7 +127,8 @@
                             <input id="loginRemember" name="remember" type="checkbox" value="1">
                             <span>จดจำการเข้าสู่ระบบ</span>
                         </label>
-                        <a href="#loginForgotPasswordPanel">ลืมรหัสผ่าน?</a>
+                        <a id="loginForgotPasswordTrigger" href="#loginForgotPasswordPanel"
+                           aria-controls="loginForgotPasswordPanel" aria-expanded="false">ลืมรหัสผ่าน?</a>
                     </div>
                     <button class="public-login-submit" type="submit">
                         <span>เข้าสู่ระบบ</span>
@@ -135,7 +136,8 @@
                     </button>
                 </form>
 
-                <section class="login-forgot-panel" id="loginForgotPasswordPanel" aria-labelledby="loginForgotPasswordHeading">
+                <section class="login-forgot-panel" id="loginForgotPasswordPanel"
+                         aria-labelledby="loginForgotPasswordHeading" hidden>
                     <div class="login-forgot-panel__head">
                         <span class="login-forgot-panel__icon"><i class="fa-solid fa-key" aria-hidden="true"></i></span>
                         <div>
@@ -153,7 +155,12 @@
                         <button class="login-forgot-submit" type="submit"><span>ส่งลิงก์ตั้งรหัสผ่านทางอีเมล</span><i class="fa-solid fa-paper-plane" aria-hidden="true"></i></button>
                     </form>
                     <div id="passwordResetMessage" class="password-recovery-message" role="status" aria-live="polite" hidden></div>
-                    <a class="login-forgot-full-link" href="<?= e(route_url('forgot-password')) ?>">เปิดหน้าลืมรหัสผ่านแบบเต็ม <i class="fa-solid fa-arrow-up-right-from-square"></i></a>
+                    <div class="login-forgot-panel__actions">
+                        <button id="loginForgotPasswordClose" class="login-forgot-close" type="button">
+                            <i class="fa-solid fa-arrow-left" aria-hidden="true"></i> กลับเข้าสู่ระบบ
+                        </button>
+                        <a class="login-forgot-full-link" href="<?= e(route_url('forgot-password')) ?>">เปิดหน้าแบบเต็ม <i class="fa-solid fa-arrow-up-right-from-square"></i></a>
+                    </div>
                 </section>
 
                 <div class="advisor-entry" hidden>

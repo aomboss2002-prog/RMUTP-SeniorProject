@@ -5,6 +5,41 @@
     let csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
     const message = document.getElementById('passwordResetMessage');
 
+    function initializeLoginForgotPasswordPanel() {
+        const panel = document.getElementById('loginForgotPasswordPanel');
+        const trigger = document.getElementById('loginForgotPasswordTrigger');
+        const close = document.getElementById('loginForgotPasswordClose');
+        if (!panel || !trigger) return;
+
+        const setOpen = (open, focus = false) => {
+            panel.hidden = !open;
+            trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+            if (open && focus) {
+                window.requestAnimationFrame(() => {
+                    document.getElementById('loginResetEmail')?.focus({preventScroll: true});
+                    panel.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+                });
+            }
+        };
+
+        trigger.addEventListener('click', (event) => {
+            event.preventDefault();
+            if (window.location.hash !== '#loginForgotPasswordPanel') {
+                history.pushState(null, '', '#loginForgotPasswordPanel');
+            }
+            setOpen(true, true);
+        });
+        close?.addEventListener('click', () => {
+            history.pushState(null, '', `${window.location.pathname}${window.location.search}`);
+            setOpen(false);
+            trigger.focus({preventScroll: true});
+        });
+        window.addEventListener('hashchange', () => {
+            setOpen(window.location.hash === '#loginForgotPasswordPanel');
+        });
+        setOpen(window.location.hash === '#loginForgotPasswordPanel');
+    }
+
     function showMessage(text, success) {
         if (!message) return;
         message.textContent = text;
@@ -62,4 +97,6 @@
             submit(event.currentTarget);
         });
     });
+
+    initializeLoginForgotPasswordPanel();
 })();
