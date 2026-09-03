@@ -6,7 +6,7 @@ return [
     'admin.dashboard' => 'dashboard', 'admin.students' => 'students',
     'admin.student.add' => 'student-add', 'admin.student.detail' => 'student-detail',
     'admin.student.edit' => 'student-edit', 'admin.advisors' => 'advisors',
-    'admin.reports' => 'reports', 'admin.settings' => 'settings',
+    'admin.reports' => 'reports', 'admin.settings' => 'settings', 'admin.system-health' => 'system-health',
     'advisor.login' => 'advisor-login', 'advisor.dashboard' => 'advisor-dashboard',
     'advisor.students' => 'advisor-students', 'advisor.student.detail' => 'advisor-student-detail',
     'advisor.messages' => 'advisor-messages', 'advisor.notifications' => 'advisor-notifications',

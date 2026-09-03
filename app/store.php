@@ -1,6 +1,7 @@
 <?php
 
 date_default_timezone_set('Asia/Bangkok');
+require_once __DIR__ . '/project-tracking.php';
 
 function app_data_path(): string
 {
@@ -29,6 +30,21 @@ function env_config(): array
         }
     }
     return $config;
+}
+
+/**
+ * Serverless hosts cannot keep a CLI worker alive. In that environment AI
+ * jobs are processed in short, request-scoped ticks instead.
+ */
+function ai_web_processing_enabled(): bool
+{
+    $config = env_config();
+    $configured = trim((string) ($config['AI_WEB_PROCESSING_ENABLED'] ?? ''));
+    if ($configured !== '') {
+        return filter_var($configured, FILTER_VALIDATE_BOOLEAN);
+    }
+
+    return getenv('VERCEL') !== false;
 }
 
 function ensure_database_column(PDO $pdo, string $table, string $column, string $definition): void
@@ -136,7 +152,7 @@ function ensure_database_foreign_key(
 
 function ensure_primary_database_schema(PDO $pdo): void
 {
-    $requiredTables = ['students', 'projects', 'documents', 'notifications', 'activities', 'comments', 'approvals', 'settings'];
+    $requiredTables = ['students', 'projects', 'documents', 'notifications', 'activities', 'comments', 'approvals', 'settings', 'project_title_checks', 'project_risk_scores'];
     $placeholders = implode(',', array_fill(0, count($requiredTables), '?'));
     $statement = $pdo->prepare(
         "SELECT COUNT(*) FROM information_schema.TABLES
@@ -240,7 +256,9 @@ function database_schema_is_current(PDO $pdo, string $version): bool
     );
     $indexStatement->execute($requiredIndexes);
     $requiredIndexCount = (int) $indexStatement->fetchColumn();
-    if ($relationCount >= 32 && $requiredIndexCount === count($requiredIndexes)) {
+    if ($version === '20260830_02_optional_student_phone'
+        && $relationCount >= 32
+        && $requiredIndexCount === count($requiredIndexes)) {
         $insert = $pdo->prepare('INSERT IGNORE INTO schema_migrations (version) VALUES (:version)');
         $insert->execute(['version' => $version]);
         return true;
@@ -293,7 +311,7 @@ function database_connection(): PDO
         return $pdo;
     }
 
-    $schemaVersion = '20260829_03_password_reset';
+    $schemaVersion = '20260902_01_project_tracking';
     if (database_schema_is_current($pdo, $schemaVersion)) {
         return $pdo;
     }
@@ -352,6 +370,39 @@ function database_connection(): PDO
         state_key VARCHAR(40) PRIMARY KEY,
         state_json LONGTEXT NOT NULL,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS project_title_checks (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        project_id VARCHAR(20) NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        status VARCHAR(20) NOT NULL DEFAULT 'queued',
+        engine VARCHAR(80) DEFAULT '',
+        model VARCHAR(120) NULL,
+        max_similarity DECIMAL(7,6) NULL,
+        risk_level VARCHAR(20) DEFAULT '',
+        matches_json LONGTEXT NULL,
+        error_message TEXT NULL,
+        attempts TINYINT UNSIGNED NOT NULL DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        started_at DATETIME NULL,
+        completed_at DATETIME NULL,
+        INDEX idx_title_checks_queue (status, created_at),
+        INDEX idx_title_checks_project (project_id, id)
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS project_risk_scores (
+        project_id VARCHAR(20) PRIMARY KEY,
+        score TINYINT UNSIGNED NOT NULL DEFAULT 0,
+        risk_level VARCHAR(20) NOT NULL DEFAULT 'low',
+        confidence TINYINT UNSIGNED NOT NULL DEFAULT 0,
+        stage VARCHAR(40) NOT NULL DEFAULT 'proposal',
+        progress_snapshot TINYINT UNSIGNED NOT NULL DEFAULT 0,
+        last_activity_at DATETIME NULL,
+        factors_json LONGTEXT NULL,
+        recommendation VARCHAR(500) DEFAULT '',
+        engine VARCHAR(80) NOT NULL DEFAULT 'behavior-risk-v1',
+        calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_risk_level_score (risk_level, score),
+        INDEX idx_risk_calculated (calculated_at)
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
     $pdo->exec("CREATE TABLE IF NOT EXISTS audit_logs (
         id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -457,8 +508,11 @@ function database_connection(): PDO
     ensure_database_column($pdo, 'notifications', 'scope', "VARCHAR(20) NULL AFTER advisor_id");
     ensure_database_column($pdo, 'notifications', 'read_by', 'LONGTEXT NULL AFTER read_status');
 
+    $pdo->exec("ALTER TABLE students MODIFY phone VARCHAR(60) NULL DEFAULT NULL");
+    $pdo->exec("UPDATE students SET phone = NULL WHERE TRIM(COALESCE(phone, '')) = ''");
     ensure_database_index($pdo, 'students', 'idx_students_advisor', '`advisor_id`');
     ensure_database_index($pdo, 'students', 'idx_students_project', '`project_id`');
+    ensure_database_index($pdo, 'students', 'uq_students_phone', '`phone`', true);
     ensure_database_index($pdo, 'projects', 'idx_projects_student', '`student_id`');
     ensure_database_index($pdo, 'projects', 'idx_projects_advisor', '`advisor_id`');
     ensure_database_index($pdo, 'documents', 'idx_documents_project', '`project_id`');
@@ -516,6 +570,9 @@ function database_connection(): PDO
     ensure_database_foreign_key($pdo, 'notifications', 'student_id', 'students', 'fk_notifications_student', 'CASCADE');
     ensure_database_foreign_key($pdo, 'notifications', 'advisor_id', 'advisors', 'fk_notifications_advisor', 'CASCADE');
     ensure_database_foreign_key($pdo, 'notification_reads', 'notification_id', 'notifications', 'fk_notification_reads_notification', 'CASCADE');
+    ensure_database_foreign_key($pdo, 'project_title_checks', 'project_id', 'projects', 'fk_title_checks_project', 'CASCADE');
+    ensure_database_foreign_key($pdo, 'project_risk_scores', 'project_id', 'projects', 'fk_risk_project', 'CASCADE');
+    ensure_project_tracking_schema($pdo);
     mark_database_schema_current($pdo, $schemaVersion);
     return $pdo;
 }
@@ -601,7 +658,7 @@ function sync_student_to_database(array $student): void
         'first_name' => $student['first_name'],
         'last_name' => $student['last_name'],
         'email' => $student['email'],
-        'phone' => $student['phone'] ?? '',
+        'phone' => ($student['phone'] ?? '') ?: null,
         'faculty' => $student['faculty'] ?? '',
         'major' => $student['major'] ?? '',
         'year_level' => (int) ($student['year_level'] ?? 4),
@@ -723,6 +780,12 @@ function delete_student_from_database(string $id): void
 {
     database_connection()->prepare('DELETE FROM student_advisors WHERE student_id = :id')->execute(['id' => $id]);
     $statement = database_connection()->prepare('DELETE FROM students WHERE id = :id');
+    $statement->execute(['id' => $id]);
+}
+
+function delete_advisor_from_database(string $id): void
+{
+    $statement = database_connection()->prepare('DELETE FROM advisors WHERE id = :id');
     $statement->execute(['id' => $id]);
 }
 
@@ -905,11 +968,11 @@ function seed_data(): array
     $now = date('Y-m-d H:i:s');
     return [
         'students' => [
-            ['id' => 'STU001', 'code' => '66010001', 'first_name' => 'Narin', 'last_name' => 'Sukjai', 'email' => 'narin@rmutp.ac.th', 'phone' => '089-100-0001', 'faculty' => 'Industrial Education', 'major' => 'Computer Engineering', 'year_level' => 4, 'advisor_id' => 'ADV001', 'project_id' => 'PRJ001', 'status' => 'Review', 'photo' => 'assets/img/profile-student.svg'],
-            ['id' => 'STU002', 'code' => '66010002', 'first_name' => 'Sirinya', 'last_name' => 'Kamon', 'email' => 'sirinya@rmutp.ac.th', 'phone' => '089-100-0002', 'faculty' => 'Engineering', 'major' => 'Information Technology', 'year_level' => 4, 'advisor_id' => 'ADV002', 'project_id' => 'PRJ002', 'status' => 'Approved', 'photo' => 'assets/img/profile-student.svg'],
-            ['id' => 'STU003', 'code' => '66010003', 'first_name' => 'Pawat', 'last_name' => 'Rattanakul', 'email' => 'pawat@rmutp.ac.th', 'phone' => '089-100-0003', 'faculty' => 'Business Administration', 'major' => 'Business Computer', 'year_level' => 3, 'advisor_id' => 'ADV003', 'project_id' => 'PRJ003', 'status' => 'Draft', 'photo' => 'assets/img/profile-student.svg'],
-            ['id' => 'STU004', 'code' => '66010004', 'first_name' => 'Kanyarat', 'last_name' => 'Meesuk', 'email' => 'kanyarat@rmutp.ac.th', 'phone' => '089-100-0004', 'faculty' => 'Science', 'major' => 'Data Science', 'year_level' => 4, 'advisor_id' => 'ADV001', 'project_id' => 'PRJ004', 'status' => 'Pending', 'photo' => 'assets/img/profile-student.svg'],
-            ['id' => 'STU005', 'code' => '66010005', 'first_name' => 'Thanawat', 'last_name' => 'Naksri', 'email' => 'thanawat@rmutp.ac.th', 'phone' => '089-100-0005', 'faculty' => 'Engineering', 'major' => 'Software Engineering', 'year_level' => 4, 'advisor_id' => 'ADV004', 'project_id' => 'PRJ005', 'status' => 'Completed', 'photo' => 'assets/img/profile-student.svg'],
+            ['id' => 'STU001', 'code' => '076250101001-6', 'first_name' => 'Narin', 'last_name' => 'Sukjai', 'email' => 'narin@rmutp.ac.th', 'phone' => '0891000001', 'faculty' => 'Industrial Education', 'major' => 'Computer Engineering', 'year_level' => 4, 'advisor_id' => 'ADV001', 'project_id' => 'PRJ001', 'status' => 'Review', 'photo' => 'assets/img/profile-student.svg'],
+            ['id' => 'STU002', 'code' => '076250101002-4', 'first_name' => 'Sirinya', 'last_name' => 'Kamon', 'email' => 'sirinya@rmutp.ac.th', 'phone' => '0891000002', 'faculty' => 'Engineering', 'major' => 'Information Technology', 'year_level' => 4, 'advisor_id' => 'ADV002', 'project_id' => 'PRJ002', 'status' => 'Approved', 'photo' => 'assets/img/profile-student.svg'],
+            ['id' => 'STU003', 'code' => '076250101003-2', 'first_name' => 'Pawat', 'last_name' => 'Rattanakul', 'email' => 'pawat@rmutp.ac.th', 'phone' => '0891000003', 'faculty' => 'Business Administration', 'major' => 'Business Computer', 'year_level' => 3, 'advisor_id' => 'ADV003', 'project_id' => 'PRJ003', 'status' => 'Draft', 'photo' => 'assets/img/profile-student.svg'],
+            ['id' => 'STU004', 'code' => '076250101004-0', 'first_name' => 'Kanyarat', 'last_name' => 'Meesuk', 'email' => 'kanyarat@rmutp.ac.th', 'phone' => '0891000004', 'faculty' => 'Science', 'major' => 'Data Science', 'year_level' => 4, 'advisor_id' => 'ADV001', 'project_id' => 'PRJ004', 'status' => 'Pending', 'photo' => 'assets/img/profile-student.svg'],
+            ['id' => 'STU005', 'code' => '076250101005-8', 'first_name' => 'Thanawat', 'last_name' => 'Naksri', 'email' => 'thanawat@rmutp.ac.th', 'phone' => '0891000005', 'faculty' => 'Engineering', 'major' => 'Software Engineering', 'year_level' => 4, 'advisor_id' => 'ADV004', 'project_id' => 'PRJ005', 'status' => 'Completed', 'photo' => 'assets/img/profile-student.svg'],
         ],
         'advisors' => [
             ['id' => 'ADV001', 'name' => 'Dr. Anan Chaiyo', 'email' => 'anan@rmutp.ac.th', 'phone' => '02-665-3777', 'department' => 'Computer Engineering', 'students' => 12, 'status' => 'Active'],
@@ -1091,6 +1154,9 @@ function save_data(array $data): void
     $previousData = is_string($previousJson) ? json_decode($previousJson, true) : null;
     $previousData = is_array($previousData) ? $previousData : [];
 
+    $trackingEvents = prepare_project_tracking_events($previousData, $data);
+    $data = apply_project_code_eligibility(apply_calculated_project_progress($data));
+
     $advisorsToSync = changed_collection_rows($data['advisors'] ?? [], $previousData['advisors'] ?? []);
     $studentsToSync = changed_collection_rows($data['students'] ?? [], $previousData['students'] ?? []);
     $projectsToSync = changed_collection_rows($data['projects'] ?? [], $previousData['projects'] ?? []);
@@ -1104,6 +1170,7 @@ function save_data(array $data): void
         $previousData['group_invitations'] ?? []
     );
     $groupsChanged = ($data['groups'] ?? []) !== ($previousData['groups'] ?? []);
+    $documentsChanged = ($data['documents'] ?? []) !== ($previousData['documents'] ?? []);
     $previousStudents = collection_rows_by_id($previousData['students'] ?? []);
 
     $ownsTransaction = !$pdo->inTransaction();
@@ -1119,6 +1186,8 @@ function save_data(array $data): void
         }
         foreach ($projectsToSync as $project) sync_project_to_database($project);
         if ($groupsChanged) sync_groups_to_database($data['groups'] ?? []);
+        if ($documentsChanged) sync_workflow_documents_to_database($pdo, $data['documents'] ?? [], $previousData['documents'] ?? []);
+        persist_project_tracking_events($pdo, $trackingEvents);
         if ($messagesToSync) sync_messages_to_database($messagesToSync);
         if ($advisorInvitationsToSync) sync_advisor_invitations_to_database($advisorInvitationsToSync);
         if ($groupInvitationsToSync) sync_group_invitations_to_database($groupInvitationsToSync);

@@ -2,7 +2,7 @@
     <div class="row g-3">
         <div class="col-md-4">
             <label class="form-label" for="studentCodeInput">รหัสนักศึกษา</label>
-            <input class="form-control" id="studentCodeInput" name="code" required>
+            <input class="form-control" id="studentCodeInput" name="code" inputmode="numeric" maxlength="14" pattern="[0-9]{12}-[0-9]" placeholder="076250101001-6" title="กรอกตัวเลข 12 หลัก ตามด้วยขีดและเลขตรวจสอบ 1 หลัก" required>
         </div>
         <div class="col-md-4">
             <label class="form-label" for="firstNameInput">ชื่อ</label>
@@ -18,7 +18,7 @@
         </div>
         <div class="col-md-6">
             <label class="form-label" for="phoneInput">เบอร์โทรศัพท์</label>
-            <input class="form-control" id="phoneInput" name="phone" required>
+            <input class="form-control" id="phoneInput" name="phone" type="tel" inputmode="numeric" maxlength="10" pattern="[0-9]{9,10}" placeholder="0812345678" title="กรอกเบอร์โทรศัพท์เป็นตัวเลข 9-10 หลัก" required>
         </div>
         <div class="col-md-4">
             <label class="form-label" for="yearInput">ชั้นปี</label>

@@ -4,6 +4,7 @@
     const refreshMs = 30000;
     const advisorStatusRefreshMs = 30000;
     let projectCache = null;
+    let projectTitleCheckTimer = null;
     let uploadPreviewObjectUrl = null;
     let studentMessages = [];
     let studentMessagePage = 1;
@@ -153,6 +154,97 @@
         });
     }
 
+    function renderProjectTitleCheck(check) {
+        const container = $('#studentProjectTitleCheck');
+        if (!container.length) return;
+        if (!check) {
+            container.addClass('d-none').empty();
+            return;
+        }
+
+        const status = check.status || '';
+        if (['queued', 'processing'].includes(status)) {
+            container.removeClass('d-none').html(`
+                <div class="alert alert-info mb-0">
+                    <i class="fa-solid fa-circle-notch fa-spin me-2"></i>
+                    ระบบกำลังตรวจสอบชื่อโครงงานซ้ำอยู่เบื้องหลัง คุณสามารถใช้งานหน้าอื่นต่อได้
+                </div>`);
+            scheduleProjectTitleCheckPoll();
+            return;
+        }
+        if (status === 'failed') {
+            container.removeClass('d-none').html(`
+                <div class="alert alert-warning mb-0">
+                    <i class="fa-solid fa-triangle-exclamation me-2"></i>
+                    ยังตรวจสอบชื่อโครงงานซ้ำไม่สำเร็จ ระบบจะลองใหม่เมื่อ Worker ทำงาน
+                </div>`);
+            return;
+        }
+        if (status !== 'completed') {
+            container.addClass('d-none').empty();
+            return;
+        }
+
+        const score = Math.round(Number(check.max_similarity || 0) * 100);
+        const risk = check.risk_level || 'clear';
+        const style = risk === 'high' ? 'danger' : (risk === 'review' ? 'warning' : 'success');
+        const heading = risk === 'high'
+            ? `พบชื่อที่คล้ายกันมาก ${score}%`
+            : (risk === 'review' ? `ควรตรวจสอบชื่อใกล้เคียง ${score}%` : `ไม่พบชื่อที่ซ้ำอย่างมีนัยสำคัญ (${score}%)`);
+        const matches = (check.matches || []).slice(0, 3);
+        const matchList = matches.length ? `<ul class="mb-0 mt-2">${matches.map((match) => `
+            <li><strong>${Math.round(Number(match.score || 0) * 100)}%</strong> ${App.escapeHtml(match.title || '-')}</li>
+        `).join('')}</ul>` : '';
+        const engine = check.engine === 'ollama-embedding' ? `AI ${check.model || 'Ollama'}` : 'ตัวเปรียบเทียบในเครื่อง';
+        container.removeClass('d-none').html(`
+            <div class="alert alert-${style} mb-0">
+                <div class="d-flex justify-content-between flex-wrap gap-2">
+                    <strong><i class="fa-solid fa-wand-magic-sparkles me-2"></i>${heading}</strong>
+                    <small>ประมวลผลด้วย ${App.escapeHtml(engine)}</small>
+                </div>
+                ${matchList}
+            </div>`);
+    }
+
+    function renderProjectRiskScore(risk) {
+        const container = $('#studentProjectRiskScore');
+        if (!container.length) return;
+        if (!risk) {
+            container.removeClass('d-none').html(`
+                <div class="alert alert-light border mb-0">
+                    <i class="fa-solid fa-clock-rotate-left me-2"></i>
+                    ระบบเบื้องหลังกำลังเตรียมคะแนนความเสี่ยงของโครงงาน
+                </div>`);
+            return;
+        }
+        const score = Math.max(0, Math.min(100, Number(risk.score || 0)));
+        const styles = { low: 'success', watch: 'info', high: 'warning', critical: 'danger' };
+        const labels = { low: 'ความเสี่ยงต่ำ', watch: 'ควรเฝ้าระวัง', high: 'ความเสี่ยงสูง', critical: 'วิกฤต' };
+        const style = styles[risk.risk_level] || 'secondary';
+        const factors = (risk.factors || []).slice(0, 4);
+        container.removeClass('d-none').html(`
+            <div class="alert alert-${style} mb-0">
+                <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                    <div>
+                        <strong><i class="fa-solid fa-chart-line me-2"></i>Risk Score ${score}% — ${labels[risk.risk_level] || 'กำลังประเมิน'}</strong>
+                        <div class="small mt-1">ความมั่นใจ ${Number(risk.confidence || 0)}% · ไม่ใช้วันกำหนดส่ง</div>
+                    </div>
+                    <small>อัปเดต ${App.escapeHtml(risk.calculated_at || '-')}</small>
+                </div>
+                ${factors.length ? `<ul class="mb-2 mt-2">${factors.map((factor) => `
+                    <li>${App.escapeHtml(factor.message || '')} <strong>+${Number(factor.points || 0)}</strong></li>
+                `).join('')}</ul>` : '<p class="mb-2 mt-2">ยังไม่พบสัญญาณว่างานหยุดนิ่ง</p>'}
+                <div class="small"><strong>คำแนะนำ:</strong> ${App.escapeHtml(risk.recommendation || '-')}</div>
+            </div>`);
+    }
+
+    function scheduleProjectTitleCheckPoll() {
+        window.clearTimeout(projectTitleCheckTimer);
+        projectTitleCheckTimer = window.setTimeout(function () {
+            request('api/student/project-title-check/').done((response) => renderProjectTitleCheck(response.data));
+        }, 3000);
+    }
+
     function loadGroup() {
         return request('api/student/group/').done(function (response) {
             const data = response.data;
@@ -291,7 +383,13 @@
             const project = data.project;
             $('#portalStudentPhoto').attr('src', App.url(`api/profile-photo.php?id=${encodeURIComponent(student.id)}`));
             $('#portalStudentName').text(`${student.first_name} ${student.last_name}`);
-            $('#portalStudentMeta').text(`${student.code} · ${student.major}`);
+            $('#portalStudentMeta .portal-student-code').text(student.code || '-');
+            const majorText = String(student.major || '-').trim();
+            const qualificationStart = majorText.indexOf('(');
+            const major = qualificationStart > 0 ? majorText.slice(0, qualificationStart).trim() : majorText;
+            const qualification = qualificationStart > 0 ? majorText.slice(qualificationStart).trim() : '';
+            $('#portalStudentMeta .portal-student-major').text(major);
+            $('#portalStudentMeta .portal-student-qualification').text(qualification).toggleClass('d-none', !qualification);
             $('#portalProjectTitle').text(project.title || 'ยังไม่มีโครงงาน');
             $('#portalAdvisorText').text(`อาจารย์ที่ปรึกษา: ${data.advisor.name || '-'}`);
             $('#portalProgressText').text(`${data.progress}%`);
@@ -397,6 +495,8 @@
         loadProject(function (data) {
             const project = data.project;
             const canEditProject = !data.group || data.is_group_leader;
+            renderProjectTitleCheck(data.title_check);
+            ProjectTrackingUI.renderAll({ progress: '#studentTrackingProgress', summary: '#studentTrackingSummary', milestones: '#studentMilestones' }, data.tracking);
             $('#studentProjectEditForm').removeClass('d-none');
             $('#studentProjectEditActions').toggleClass('d-none', !canEditProject);
             $('#studentProjectReadOnlyNote').toggleClass('d-none', canEditProject);
@@ -712,7 +812,10 @@
     }
 
     function loadTimeline() {
-        request('api/student/timeline/').done((response) => renderTimeline('#studentFullTimeline', response.data));
+        request('api/student/timeline/').done((response) => {
+            if (response.durable) ProjectTrackingUI.renderHistory('#studentFullTimeline', response.data);
+            else renderTimeline('#studentFullTimeline', response.data);
+        });
     }
 
     function loadNotifications() {

@@ -27,6 +27,7 @@ function route_url(string $page, array $params = []): string
         'student-add' => 'admin/students/add.php', 'student-detail' => 'admin/students/detail.php',
         'student-edit' => 'admin/students/edit.php', 'advisors' => 'admin/advisors/index.php',
         'reports' => 'admin/reports/index.php', 'settings' => 'admin/settings/index.php',
+        'system-health' => 'admin/system-health/index.php',
         'advisor-login' => 'login.php', 'advisor-dashboard' => 'advisor/dashboard.php',
         'advisor-students' => 'advisor/students.php', 'advisor-student-detail' => 'advisor/student-detail.php',
         'advisor-proposal' => 'advisor/review.php?stage=proposal', 'advisor-draft' => 'advisor/review.php?stage=draft',
@@ -122,8 +123,8 @@ function page_uses_datatables(string $page): bool
 function page_uses_charts(string $page): bool
 {
     return in_array($page, [
-        'dashboard', 'reports', 'portal-project',
-        'advisor-dashboard', 'advisor-reports',
+        'dashboard', 'reports', 'portal-project', 'student-detail',
+        'advisor-dashboard', 'advisor-reports', 'advisor-student-detail',
     ], true);
 }
 
@@ -161,6 +162,7 @@ function app_pages(): array
         'notifications' => ['title' => 'การแจ้งเตือน', 'file' => 'notifications.php', 'icon' => 'fa-bell'],
         'profile' => ['title' => 'โปรไฟล์', 'file' => 'profile.php', 'icon' => 'fa-user'],
         'settings' => ['title' => 'ตั้งค่า', 'file' => 'settings.php', 'icon' => 'fa-gear'],
+        'system-health' => ['title' => 'สถานะระบบ', 'file' => 'system-health.php', 'icon' => 'fa-heart-pulse'],
         '404' => ['title' => '404 ไม่พบหน้า', 'file' => '404.php', 'icon' => 'fa-triangle-exclamation'],
         '403' => ['title' => '403 ไม่มีสิทธิ์เข้าถึง', 'file' => '403.php', 'icon' => 'fa-lock'],
         '500' => ['title' => '500 ระบบขัดข้อง', 'file' => '500.php', 'icon' => 'fa-bug'],
@@ -177,6 +179,7 @@ function sidebar_items(): array
         'documents' => ['label' => 'เอกสาร', 'icon' => 'fa-folder-open'],
         'reports' => ['label' => 'รายงาน', 'icon' => 'fa-chart-column'],
         'notifications' => ['label' => 'การแจ้งเตือน', 'icon' => 'fa-bell'],
+        'system-health' => ['label' => 'สถานะระบบ', 'icon' => 'fa-heart-pulse'],
         'settings' => ['label' => 'ตั้งค่า', 'icon' => 'fa-gear'],
     ];
 }

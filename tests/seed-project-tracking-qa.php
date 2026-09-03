@@ -1,0 +1,30 @@
+<?php
+declare(strict_types=1);
+require_once dirname(__DIR__) . '/app/store.php';
+if (PHP_SAPI !== 'cli') exit(1);
+$clean = in_array('--clean', $argv, true);
+$pdo = database_connection(); ensure_project_tracking_schema($pdo); $data = load_data();
+$qa = static fn(array $row): bool => str_starts_with((string) ($row['id'] ?? ''), 'QAT');
+foreach (['documents','groups','projects','students','advisors'] as $collection) $data[$collection] = array_values(array_filter($data[$collection] ?? [], static fn(array $row): bool => !$qa($row)));
+save_data($data);
+$pdo->exec("DELETE FROM advisor_followups WHERE project_id LIKE 'QAT%'");
+$pdo->exec("DELETE FROM project_groups WHERE id LIKE 'QAT%'");
+$pdo->exec("DELETE FROM projects WHERE id LIKE 'QAT%'");
+$pdo->exec("DELETE FROM students WHERE id LIKE 'QAT%'");
+$pdo->exec("DELETE FROM advisors WHERE id LIKE 'QAT%'");
+if ($clean) { echo "PROJECT_TRACKING_QA_CLEAN\n"; exit; }
+$qaMajor = 'บธ.บ. สาขาวิชาระบบสารสนเทศและนวัตกรรมดิจิทัล';
+$data['advisors'][]=['id'=>'QATADV1','name'=>'อ.ดร.กิตติพงศ์ ใจดี','email'=>'qa.advisor@rmutp.ac.th','phone'=>'0999700001','faculty'=>'คณะบริหารธุรกิจ','department'=>$qaMajor,'students'=>1,'status'=>'Active','password_hash'=>password_hash('Qa@2026',PASSWORD_DEFAULT),'photo'=>'assets/img/profile-advisor.svg'];
+$data['students'][]=['id'=>'QATSTU1','code'=>'076760305099-2','first_name'=>'ณัฐวุฒิ','last_name'=>'แสงทอง','email'=>'qa.student@rmutp.ac.th','phone'=>'0999700002','faculty'=>'คณะบริหารธุรกิจ','major'=>$qaMajor,'year_level'=>4,'advisor_id'=>'QATADV1','advisor_roles'=>['chair'=>'QATADV1'],'project_id'=>'QATPRJ1','status'=>'Draft','photo'=>'assets/img/profile-student.svg'];
+$data['projects'][]=['id'=>'QATPRJ1','code'=>'QA-2569-001','title'=>'ระบบติดตามความก้าวหน้าโครงงานนักศึกษาอัจฉริยะ','student_id'=>'QATSTU1','advisor_id'=>'QATADV1','category'=>'Web Application','status'=>'Draft','progress'=>0,'updated_at'=>date('Y-m-d H:i:s',strtotime('-2 days'))];
+$data['groups'][]=['id'=>'QATGRP1','name'=>'Academic Pulse Lab','leader_id'=>'QATSTU1','project_id'=>'QATPRJ1','faculty'=>'คณะบริหารธุรกิจ','created_at'=>date('Y-m-d H:i:s',strtotime('-40 days')),'member_ids'=>['QATSTU1'],'advisor_roles'=>['chair'=>'QATADV1']]; save_data($data);
+$add = static function(string $id,string $type,?int $chapter,string $uploaded) use (&$data): void { $data['documents'][]=['id'=>$id,'project_id'=>'QATPRJ1','student_id'=>'QATSTU1','group_id'=>'QATGRP1','type'=>$type,'chapter'=>$chapter,'title'=>$type==='draft'?"Draft Chapter {$chapter}":ucfirst($type),'filename'=>strtolower($id).'.pdf','size'=>'1.4 MB','status'=>'Pending','uploaded_at'=>$uploaded]; save_data($data); };
+$status = static function(string $id,string $value,string $at) use (&$data): void { foreach($data['documents'] as &$row)if($row['id']===$id){$row['status']=$value;$row['approved_at']=$at;break;}unset($row);save_data($data); };
+$add('QATDOC1','proposal',null,date('Y-m-d H:i:s',strtotime('-35 days'))); $status('QATDOC1','Approved',date('Y-m-d H:i:s',strtotime('-33 days')));
+$add('QATDOC2','draft',1,date('Y-m-d H:i:s',strtotime('-25 days'))); $status('QATDOC2','Approved',date('Y-m-d H:i:s',strtotime('-23 days')));
+$add('QATDOC3','draft',2,date('Y-m-d H:i:s',strtotime('-16 days'))); $status('QATDOC3','Approved',date('Y-m-d H:i:s',strtotime('-14 days')));
+$add('QATDOC4','draft',3,date('Y-m-d H:i:s',strtotime('-5 days'))); $status('QATDOC4','NeedsRevision',date('Y-m-d H:i:s',strtotime('-3 days')));
+$stmt=$pdo->prepare('INSERT INTO advisor_followups(project_id,advisor_id,note,issue,next_action,followup_at) VALUES(?,?,?,?,?,?)');
+$stmt->execute(['QATPRJ1','QATADV1','ตรวจความคืบหน้า Draft บทที่ 3 แล้ว โครงสร้างโดยรวมชัดเจน','แผนภาพขั้นตอนยังไม่สอดคล้องกับขอบเขตระบบ','ปรับแผนภาพและส่ง Draft บทที่ 3 อีกครั้ง',date('Y-m-d',strtotime('+7 days'))]);
+$stmt->execute(['QATPRJ1','QATADV1','ทบทวน Proposal และกำหนดแนวทางการพัฒนาร่วมกัน','','เริ่มจัดทำ Draft บทที่ 1',null]);
+echo "PROJECT_TRACKING_QA_READY advisor=qa.advisor@rmutp.ac.th password=Qa@2026 student=QATSTU1\n";

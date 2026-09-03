@@ -1,5 +1,7 @@
 <?php
 require_once __DIR__ . '/../app/store.php';
+require_once __DIR__ . '/../app/ai-title-check.php';
+require_once __DIR__ . '/../app/ai-risk.php';
 require_once __DIR__ . '/../app/session.php';
 require_once __DIR__ . '/../app/storage.php';
 start_app_session();
@@ -337,12 +339,28 @@ function portal_timeline(array $context): array
 function portal_project_payload(array $context): array
 {
     $barcodeAvailable = barcode_is_available($context);
+    $titleCheck = null;
+    if (!empty($context['project']['id'])) {
+        try {
+            $titleCheck = latest_project_title_check((string) $context['project']['id']);
+        } catch (Throwable $error) {
+            error_log('[AI PROJECT] Unable to load AI result: ' . $error->getMessage());
+        }
+    }
+    $projectId = (string) ($context['project']['id'] ?? '');
+    $tracking = $projectId !== '' ? project_tracking_payload($projectId, $context['documents']) : derive_project_tracking([]);
+    // Students only need the current stage and milestones on the project page.
+    // Detailed trend history and advisor follow-up notes remain available to
+    // advisors/admins and are not included in this payload.
+    unset($tracking['history'], $tracking['followups']);
     return [
         'student' => $context['student'],
         'group' => $context['group'],
         'is_group_leader' => $context['group'] && ($context['group']['leader_id'] ?? '') === $context['studentId'],
         'advisor' => $context['advisor'],
         'project' => $context['project'],
+        'title_check' => $titleCheck,
+        'tracking' => $tracking,
         'progress' => calculated_project_progress($context['documents']),
         'stages' => [
             'proposal' => stage_payload($context, 'proposal'),
@@ -997,6 +1015,19 @@ if ($endpoint === 'dashboard') {
     student_respond(['success' => true, 'data' => student_dashboard_payload($context)]);
 }
 
+if ($endpoint === 'project-title-check') {
+    $projectId = (string) ($context['project']['id'] ?? '');
+    $check = null;
+    if ($projectId !== '') {
+        try {
+            $check = latest_project_title_check($projectId);
+        } catch (Throwable $error) {
+            error_log('[AI TITLE CHECK] Unable to load result: ' . $error->getMessage());
+        }
+    }
+    student_respond(['success' => true, 'data' => $check]);
+}
+
 if ($endpoint === 'project') {
     if ($method === 'POST' || $method === 'PUT') {
         if ($context['group'] && ($context['group']['leader_id'] ?? '') !== $context['studentId']) {
@@ -1046,14 +1077,41 @@ if ($endpoint === 'project') {
                 unset($student);
             }
             save_data($data);
-            student_respond(['success' => true, 'data' => $project, 'message' => 'Project created.']);
+            $titleCheck = null;
+            try {
+                $titleCheck = queue_project_title_check($projectId, $title);
+            } catch (Throwable $error) {
+                error_log('[AI TITLE CHECK] Unable to queue project ' . $projectId . ': ' . $error->getMessage());
+            }
+            student_respond([
+                'success' => true, 'data' => $project, 'title_check' => $titleCheck,
+                'message' => ($titleCheck['status'] ?? '') === 'completed'
+                    ? 'Project created. AI duplicate check completed.'
+                    : ($titleCheck ? 'Project created. AI duplicate check queued.' : 'Project created.'),
+            ]);
         }
         foreach ($data['projects'] as &$project) {
             if (($project['id'] ?? '') === ($context['project']['id'] ?? '')) {
+                $titleChanged = normalize_ai_title((string) ($project['title'] ?? '')) !== normalize_ai_title($title);
                 $project['title'] = $title;
                 $project['updated_at'] = date('Y-m-d H:i:s');
                 save_data($data);
-                student_respond(['success' => true, 'data' => $project, 'message' => 'Project updated.']);
+                $titleCheck = null;
+                if ($titleChanged) {
+                    try {
+                        $titleCheck = queue_project_title_check((string) $project['id'], $title);
+                    } catch (Throwable $error) {
+                        error_log('[AI TITLE CHECK] Unable to queue project ' . $project['id'] . ': ' . $error->getMessage());
+                    }
+                }
+                student_respond([
+                    'success' => true, 'data' => $project, 'title_check' => $titleCheck,
+                    'message' => $titleChanged && ($titleCheck['status'] ?? '') === 'completed'
+                        ? 'Project updated. AI duplicate check completed.'
+                        : ($titleChanged && $titleCheck
+                            ? 'Project updated. AI duplicate check queued.'
+                            : 'Project updated.'),
+                ]);
             }
         }
         unset($project);
@@ -1063,7 +1121,9 @@ if ($endpoint === 'project') {
 }
 
 if ($endpoint === 'timeline') {
-    student_respond(['success' => true, 'data' => portal_timeline($context)]);
+    $projectId = (string) ($context['project']['id'] ?? '');
+    $history = $projectId !== '' ? project_tracking_history($projectId) : [];
+    student_respond(['success' => true, 'data' => $history ?: portal_timeline($context), 'durable' => (bool) $history]);
 }
 
 if ($endpoint === 'notifications') {

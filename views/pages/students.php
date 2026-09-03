@@ -16,7 +16,7 @@
         </select>
     </div>
     <div class="table-responsive">
-        <table class="table align-middle datatable" id="studentsTable">
+        <table class="table align-middle datatable students-table-wide" id="studentsTable">
             <thead><tr><th>รหัส</th><th>ชื่อ-นามสกุล</th><th>สาขา</th><th>อาจารย์ที่ปรึกษา</th><th>สถานะ</th><th class="text-end">จัดการ</th></tr></thead>
             <tbody></tbody>
         </table>

@@ -91,6 +91,14 @@
         const $photoInput = $('#studentPhotoFile');
         const $photoPreview = $('#studentPhotoPreview');
 
+        $('#studentCodeInput').on('input', function () {
+            const digits = String(this.value).replace(/\D/g, '').slice(0, 13);
+            this.value = digits.length > 12 ? `${digits.slice(0, 12)}-${digits.slice(12)}` : digits;
+        });
+        $('#phoneInput').on('input', function () {
+            this.value = String(this.value).replace(/\D/g, '').slice(0, 10);
+        });
+
         $photoInput.on('change', function () {
             const file = this.files[0];
             if (!file) return;
@@ -136,6 +144,7 @@
         App.api('students', { query: { id } }).done(function (response) {
             const data = response.data;
             const student = data.student;
+            ProjectTrackingUI.renderAll({ progress: '#adminTrackingProgress', summary: '#adminTrackingSummary', milestones: '#adminMilestones', history: '#adminTrackingHistory', followups: '#adminTrackingFollowups', chart: 'adminTrackingChart' }, data.tracking);
             $('#studentPhoto').attr('src', App.url(`api/profile-photo.php?id=${encodeURIComponent(student.id)}`));
             $('#studentFullName').text(`${student.first_name} ${student.last_name}`);
             $('#studentCode').text(student.code);
@@ -190,14 +199,15 @@
 
     function loadAdvisorsTable() {
         App.api('advisors').done(function (response) {
-            $('#advisorsTable tbody').html(response.data.map((row) => `
+            advisors = response.data || [];
+            $('#advisorsTable tbody').html(advisors.map((row) => `
                 <tr>
                     <td><strong>${App.escapeHtml(row.name)}</strong></td>
                     <td>${App.escapeHtml(row.department)}</td>
                     <td>${App.escapeHtml(row.email)}</td>
                     <td>${App.escapeHtml(row.students)}</td>
                     <td>${App.badge(row.status)}</td>
-                    <td class="text-end"><div class="row-actions single"><button class="row-action view" data-action="show-advisor" data-id="${row.id}" title="ดูรายละเอียด" aria-label="ดูรายละเอียด"><i class="fa-regular fa-eye"></i><span>ดูข้อมูล</span></button></div></td>
+                    <td class="text-end"><div class="row-actions"><button class="row-action view" data-action="show-advisor" data-id="${row.id}" title="ดูรายละเอียด" aria-label="ดูรายละเอียด"><i class="fa-regular fa-eye"></i></button><button class="row-action delete" type="button" data-action="delete-advisor" data-id="${row.id}" title="ลบ" aria-label="ลบ"><i class="fa-solid fa-trash"></i></button></div></td>
                 </tr>`).join(''));
             App.enhanceTable('#advisorsTable');
         });
@@ -210,9 +220,9 @@
             $('#projectsTable tbody').html(projects.map((row) => `
                 <tr>
                     <td>${App.escapeHtml(row.code)}</td>
-                    <td><strong>${App.escapeHtml(row.title)}</strong><span class="d-block text-muted">${App.escapeHtml(row.category)}</span></td>
-                    <td>${App.escapeHtml(row.student_name)}</td>
-                    <td>${App.escapeHtml(row.advisor_name)}</td>
+                    <td title="${App.escapeHtml(row.title)}"><strong>${App.escapeHtml(row.title)}</strong><span class="d-block text-muted">${App.escapeHtml(row.category)}</span></td>
+                    <td title="${App.escapeHtml(row.student_name)}">${App.escapeHtml(row.student_name)}</td>
+                    <td title="${App.escapeHtml(row.advisor_name)}">${App.escapeHtml(row.advisor_name)}</td>
                     <td><div class="progress"><div class="progress-bar" style="width:${Number(row.progress) || 0}%">${App.escapeHtml(row.progress)}%</div></div></td>
                     <td data-search="${App.escapeHtml(row.status)}">${App.badge(row.status)}</td>
                     <td class="text-end">
@@ -240,8 +250,8 @@
             const tableSelector = type ? '#documentStageTable' : '#documentsTable';
             $(tableSelector + ' tbody').html(rows.map((row) => type ? `
                 <tr>
-                    <td><strong>${App.escapeHtml(row.title)}</strong><span class="d-block text-muted">${App.escapeHtml(row.filename)}</span></td>
-                    <td>${App.escapeHtml(studentName(row.student_id))}</td>
+                    <td title="${App.escapeHtml(row.title)} — ${App.escapeHtml(row.filename)}"><strong>${App.escapeHtml(row.title)}</strong><span class="d-block text-muted">${App.escapeHtml(row.filename)}</span></td>
+                    <td title="${App.escapeHtml(studentName(row.student_id))}">${App.escapeHtml(studentName(row.student_id))}</td>
                     <td>${App.escapeHtml(row.size)}</td>
                     <td>${App.badge(row.status)}</td>
                     <td>${App.escapeHtml(row.uploaded_at)}</td>
@@ -461,43 +471,230 @@
     }
 
     function initImport() {
-        const sample = [
-            ['66019901', 'Arisa', 'Phong', 'arisa@rmutp.ac.th', 'Computer Engineering'],
-            ['66019902', 'Krit', 'Somchai', 'krit@rmutp.ac.th', 'Information Technology']
-        ];
-        $('#excelFile').on('change', function () {
+        let importRows = [];
+        let importRequestId = 0;
+        const $submit = $('[data-action="import-preview"]');
+
+        $('#excelFile').on('change', async function () {
             const file = this.files[0];
-            if (!file) {
-                return;
+            if (!file) return;
+            const requestId = ++importRequestId;
+            importRows = [];
+            $submit.prop('disabled', true);
+            updateImportSummary({ state: 'loading' });
+            renderImportRows(importRows, 'กำลังเปรียบเทียบรายชื่อกับฐานข้อมูล...');
+            try {
+                const fileRows = await parseStudentImportFile(file);
+                const response = await App.api('students');
+                if (requestId !== importRequestId) return;
+                if (!response || !Array.isArray(response.data)) {
+                    throw new Error('ระบบไม่สามารถตรวจสอบรายชื่อเดิมจากฐานข้อมูลได้');
+                }
+
+                const currentStudents = response.data;
+                const existingCodes = new Set(currentStudents.map((row) => normalizeImportCode(row.code)).filter(Boolean));
+                const existingEmails = new Set(currentStudents.map((row) => normalizeImportEmail(row.email)).filter(Boolean));
+
+                importRows = fileRows.filter((row) => {
+                    const code = normalizeImportCode(row.code);
+                    const email = normalizeImportEmail(row.email);
+                    return !existingCodes.has(code) && !existingEmails.has(email);
+                });
+
+                const existingCount = fileRows.length - importRows.length;
+                renderImportRows(importRows);
+                $submit.prop('disabled', importRows.length === 0);
+                updateImportSummary({
+                    state: importRows.length ? 'ready' : 'empty',
+                    total: fileRows.length,
+                    existing: existingCount,
+                    pending: importRows.length
+                });
+                App.toast(
+                    importRows.length
+                        ? `พบรายชื่อใหม่ ${importRows.length} จาก ${fileRows.length} รายการ สามารถเพิ่มเบอร์โทรภายหลังได้`
+                        : `รายชื่อทั้ง ${fileRows.length} รายการมีอยู่ในระบบแล้ว`,
+                    'info'
+                );
+            } catch (error) {
+                if (requestId !== importRequestId) return;
+                importRows = [];
+                renderImportRows(importRows, 'ไม่สามารถเปรียบเทียบรายชื่อกับฐานข้อมูลได้ กรุณาลองใหม่');
+                $submit.prop('disabled', true);
+                updateImportSummary({ state: 'error' });
+                const message = error?.responseJSON?.message || error?.message || 'ไม่สามารถอ่านไฟล์หรือเปรียบเทียบฐานข้อมูลได้';
+                if (typeof error?.status !== 'number') App.toast(message, 'error');
             }
-            if (!file.name.toLowerCase().endsWith('.csv')) {
-                renderImportRows(sample);
-                App.toast('Excel file accepted. Preview uses sample rows until server-side parsing is added.', 'info');
-                return;
-            }
-            const reader = new FileReader();
-            reader.onload = () => {
-                const rows = reader.result.split(/\r?\n/).filter(Boolean).slice(1).map((line) => line.split(',').slice(0, 5));
-                renderImportRows(rows);
-            };
-            reader.readAsText(file);
         });
         $('[data-action="download-sample-csv"]').on('click', function () {
-            App.downloadCsv('student-import-sample.csv', sample.map((row) => ({ code: row[0], first_name: row[1], last_name: row[2], email: row[3], major: row[4] })));
+            App.downloadCsv('student-import-sample.csv', [{
+                code: '076760305001-8', first_name: 'สุขุม', last_name: 'พวงแสงเพ็ญ',
+                email: '0767603050018@rmutp.com', phone: '0812345678', year_level: 3,
+                faculty: businessFaculty, major: businessMajors[5]
+            }]);
         });
         $('[data-action="import-preview"]').on('click', function () {
-            const rows = [];
-            $('#importPreviewTable tbody tr').each(function () {
-                rows.push($(this).find('td').map(function () { return $(this).text(); }).get());
-            });
-            App.api('import', { method: 'POST', data: { rows } }).done((response) => App.toast(response.message));
+            const invalidPhone = importRows.findIndex((row) => row.phone && !/^\d{9,10}$/.test(row.phone));
+            if (invalidPhone >= 0) {
+                App.toast(`เบอร์โทรในรายการที่ ${invalidPhone + 1} ต้องเป็นตัวเลข 9-10 หลัก หรือเว้นว่างไว้`, 'error');
+                return;
+            }
+            App.showLoader(true);
+            App.api('import', { method: 'POST', data: { rows: importRows } }).done((response) => {
+                App.toast(response.message);
+                window.setTimeout(() => {
+                    window.location.href = App.url('admin/students/index.php');
+                }, 900);
+            }).always(() => App.showLoader(false));
         });
-        renderImportRows(sample);
+        $(document).on('input', '#importPreviewTable [data-import-phone]', function () {
+            const index = Number($(this).data('import-phone'));
+            this.value = String(this.value).replace(/\D/g, '').slice(0, 10);
+            if (importRows[index]) importRows[index].phone = this.value;
+        });
+        renderImportRows(importRows, 'เลือกไฟล์ Excel หรือ CSV เพื่อดูรายชื่อที่ยังไม่มีในระบบ');
     }
 
-    function renderImportRows(rows) {
-        $('#importPreviewTable tbody').html(rows.map((row) => `<tr>${row.map((cell) => `<td>${App.escapeHtml(cell)}</td>`).join('')}</tr>`).join(''));
-        App.enhanceTable('#importPreviewTable');
+    function normalizeImportCode(value) {
+        return String(value || '').replace(/\D/g, '');
+    }
+
+    function normalizeImportEmail(value) {
+        return String(value || '').trim().toLowerCase();
+    }
+
+    function updateImportSummary({ state = 'idle', total = 0, existing = 0, pending = 0 } = {}) {
+        const $summary = $('#importReconcileSummary');
+        if (!$summary.length) return;
+
+        $summary.removeClass('is-idle is-loading is-ready is-empty is-error').addClass(`is-${state}`);
+        if (state === 'loading') {
+            $summary.html('<i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i><span>กำลังตรวจสอบรายชื่อกับฐานข้อมูล...</span>');
+            return;
+        }
+        if (state === 'error') {
+            $summary.html('<i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i><span>เปรียบเทียบฐานข้อมูลไม่สำเร็จ จึงยังไม่สามารถยืนยันนำเข้าได้</span>');
+            return;
+        }
+        if (state === 'idle') {
+            $summary.html('<span>เลือกไฟล์เพื่อเปรียบเทียบกับฐานข้อมูล</span>');
+            return;
+        }
+
+        $summary.html(`
+            <span class="import-count-item">พบในไฟล์ <strong>${App.escapeHtml(total)}</strong> รายการ</span>
+            <span class="import-count-separator" aria-hidden="true">•</span>
+            <span class="import-count-item import-count-existing">มีในระบบแล้ว <strong>${App.escapeHtml(existing)}</strong> รายการ</span>
+            <span class="import-count-separator" aria-hidden="true">•</span>
+            <span class="import-count-item import-count-pending">รอเพิ่ม <strong>${App.escapeHtml(pending)}</strong> รายการ</span>
+            ${state === 'empty' ? '<span class="import-all-current"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> ข้อมูลเป็นปัจจุบันแล้ว</span>' : ''}
+        `);
+    }
+
+    function renderImportRows(rows, emptyMessage = 'รายชื่อทั้งหมดในไฟล์มีอยู่ในระบบแล้ว ไม่มีรายการที่ต้องเพิ่ม') {
+        const existingTable = App.state.tables['#importPreviewTable'];
+        if (existingTable) existingTable.destroy();
+        $('#importPreviewTable tbody').html(rows.map((row, index) => `<tr>
+            <td><strong>${App.escapeHtml(row.code)}</strong></td>
+            <td>${App.escapeHtml(`${row.first_name} ${row.last_name}`)}</td>
+            <td>${App.escapeHtml(row.email)}</td>
+            <td><input class="form-control form-control-sm" type="tel" inputmode="numeric" maxlength="10" data-import-phone="${index}" value="${App.escapeHtml(row.phone || '')}" placeholder="เพิ่มภายหลังได้" aria-label="เบอร์โทร ${App.escapeHtml(row.code)} (ไม่บังคับ)"></td>
+            <td>${App.escapeHtml(row.year_level)}</td>
+            <td>${App.escapeHtml(row.status_label)}</td>
+        </tr>`).join(''));
+        App.enhanceTable('#importPreviewTable', { responsive: false, autoWidth: false, scrollX: true });
+        if (!rows.length) $('#importPreviewTable tbody .dataTables_empty').text(emptyMessage);
+    }
+
+    function parseStudentName(fullName) {
+        const cleaned = String(fullName || '').trim().replace(/^(นาย|นางสาว|นาง)\s*/, '');
+        const parts = cleaned.split(/\s+/).filter(Boolean);
+        return { first_name: parts.shift() || '', last_name: parts.join(' ') };
+    }
+
+    function studentYearFromCode(code) {
+        const digits = String(code || '').replace(/\D/g, '');
+        const entryYear = 2500 + Number(digits.slice(2, 4));
+        const currentBuddhistYear = new Date().getFullYear() + 543;
+        return Math.max(1, currentBuddhistYear - entryYear + 1);
+    }
+
+    function importedStudentStatus(code) {
+        const value = String(code || '').trim();
+        if (value === '40') return { status: 'Completed', label: 'สำเร็จการศึกษา' };
+        if (['10', '11', '12', '13', '14', '15', '16', '84'].includes(value)) {
+            return { status: 'Active', label: 'กำลังศึกษา' };
+        }
+        return { status: 'Inactive', label: `ไม่ใช้งาน (${value || '-'})` };
+    }
+
+    function buildImportedStudent(code, fullName, statusCode, faculty = businessFaculty, major = businessMajors[5]) {
+        const normalizedCode = String(code || '').trim();
+        const name = parseStudentName(fullName);
+        const studentStatus = importedStudentStatus(statusCode);
+        return {
+            code: normalizedCode,
+            first_name: name.first_name,
+            last_name: name.last_name,
+            email: `${normalizedCode.replace(/\D/g, '')}@rmutp.com`,
+            phone: '',
+            faculty,
+            major,
+            year_level: studentYearFromCode(normalizedCode),
+            status: studentStatus.status,
+            status_label: studentStatus.label
+        };
+    }
+
+    function parseCsvLine(line) {
+        const cells = [];
+        let value = '';
+        let quoted = false;
+        for (let index = 0; index < line.length; index += 1) {
+            const character = line[index];
+            if (character === '"' && quoted && line[index + 1] === '"') {
+                value += '"';
+                index += 1;
+            } else if (character === '"') {
+                quoted = !quoted;
+            } else if (character === ',' && !quoted) {
+                cells.push(value.trim());
+                value = '';
+            } else {
+                value += character;
+            }
+        }
+        cells.push(value.trim());
+        return cells;
+    }
+
+    async function parseStudentImportFile(file) {
+        const filename = file.name.toLowerCase();
+        if (filename.endsWith('.csv')) {
+            const text = await file.text();
+            const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter((line) => line.trim() !== '');
+            const headers = parseCsvLine(lines.shift() || '').map((header) => header.toLowerCase());
+            return lines.map(parseCsvLine).map((cells) => Object.fromEntries(headers.map((header, index) => [header, cells[index] || ''])))
+                .filter((row) => /^\d{12}-\d$/.test(row.code || ''))
+                .map((row) => {
+                    const imported = buildImportedStudent(row.code, `${row.first_name || ''} ${row.last_name || ''}`, row.status_code || '10', row.faculty || businessFaculty, row.major || businessMajors[5]);
+                    imported.phone = String(row.phone || '').replace(/\D/g, '').slice(0, 10);
+                    if (Number(row.year_level) > 0) imported.year_level = Number(row.year_level);
+                    return imported;
+                });
+        }
+        if (!filename.endsWith('.xls')) throw new Error('รองรับเฉพาะไฟล์ .xls หรือ .csv');
+
+        const buffer = await file.arrayBuffer();
+        const html = new TextDecoder('windows-874').decode(buffer);
+        if (!/<table\b/i.test(html)) throw new Error('ไฟล์ .xls นี้ไม่ใช่แบบฟอร์มตารางที่ระบบรองรับ');
+        const documentNode = new DOMParser().parseFromString(html, 'text/html');
+        const faculty = businessFaculty;
+        const major = businessMajors.find((item) => item.includes('ระบบสารสนเทศและนวัตกรรมดิจิทัล')) || businessMajors[5];
+        return Array.from(documentNode.querySelectorAll('tr')).map((tr) =>
+            Array.from(tr.querySelectorAll('th,td')).map((cell) => (cell.textContent || '').replace(/\s+/g, ' ').trim())
+        ).filter((cells) => /^\d{12}-\d$/.test(cells[1] || ''))
+            .map((cells) => buildImportedStudent(cells[1], cells[2], cells[3], faculty, major));
     }
 
     function initProfile() {
@@ -540,13 +737,24 @@
 
     $(document).on('click', '[data-action="delete-student"]', function () {
         const id = $(this).data('id');
-        App.confirmAction('Delete student?', 'This removes the student from the local REST data store.').then((result) => {
+        App.confirmAction('ลบนักศึกษา?', 'บัญชีนักศึกษาจะถูกลบออกจากฐานข้อมูล').then((result) => {
             if (result.isConfirmed) {
                 App.api('students', { method: 'DELETE', query: { id } }).done((response) => {
                     App.toast(response.message);
                     loadStudentsTable();
                 });
             }
+        });
+    });
+
+    $(document).on('click', '[data-action="delete-advisor"]', function () {
+        const id = $(this).data('id');
+        App.confirmAction('ลบอาจารย์?', 'บัญชีอาจารย์จะถูกลบออกจากฐานข้อมูล และถอดออกจากโครงงานที่เกี่ยวข้อง').then((result) => {
+            if (!result.isConfirmed) return;
+            App.api('advisors', { method: 'DELETE', query: { id } }).done((response) => {
+                App.toast(response.message);
+                loadAdvisorsTable();
+            });
         });
     });
 

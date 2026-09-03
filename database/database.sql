@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS students (
     first_name VARCHAR(120) NOT NULL,
     last_name VARCHAR(120) NOT NULL,
     email VARCHAR(160) NOT NULL UNIQUE,
-    phone VARCHAR(60) DEFAULT '',
+    phone VARCHAR(60) NULL DEFAULT NULL,
     faculty VARCHAR(160) DEFAULT '',
     major VARCHAR(160) DEFAULT '',
     year_level INT DEFAULT 4,
@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS students (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_students_advisor (advisor_id),
     INDEX idx_students_project (project_id),
+    UNIQUE KEY uq_students_phone (phone),
     CONSTRAINT fk_students_advisor FOREIGN KEY (advisor_id) REFERENCES advisors(id)
         ON UPDATE CASCADE ON DELETE SET NULL
 );
@@ -257,6 +258,59 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS project_title_checks (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    project_id VARCHAR(20) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'queued',
+    engine VARCHAR(80) DEFAULT '',
+    model VARCHAR(120) NULL,
+    max_similarity DECIMAL(7,6) NULL,
+    risk_level VARCHAR(20) DEFAULT '',
+    matches_json LONGTEXT NULL,
+    error_message TEXT NULL,
+    attempts TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    started_at DATETIME NULL,
+    completed_at DATETIME NULL,
+    INDEX idx_title_checks_queue (status, created_at),
+    INDEX idx_title_checks_project (project_id, id),
+    CONSTRAINT fk_title_checks_project FOREIGN KEY (project_id) REFERENCES projects(id)
+        ON UPDATE CASCADE ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS project_risk_scores (
+    project_id VARCHAR(20) PRIMARY KEY,
+    score TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    risk_level VARCHAR(20) NOT NULL DEFAULT 'low',
+    confidence TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    stage VARCHAR(40) NOT NULL DEFAULT 'proposal',
+    progress_snapshot TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    last_activity_at DATETIME NULL,
+    factors_json LONGTEXT NULL,
+    recommendation VARCHAR(500) DEFAULT '',
+    engine VARCHAR(80) NOT NULL DEFAULT 'behavior-risk-v1',
+    calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_risk_level_score (risk_level, score),
+    INDEX idx_risk_calculated (calculated_at),
+    CONSTRAINT fk_risk_project FOREIGN KEY (project_id) REFERENCES projects(id)
+        ON UPDATE CASCADE ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS system_job_runs (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    job_name VARCHAR(80) NOT NULL,
+    status ENUM('started', 'success', 'failed') NOT NULL DEFAULT 'started',
+    started_at DATETIME NOT NULL,
+    finished_at DATETIME NULL,
+    duration_ms INT UNSIGNED NULL,
+    summary_json TEXT NULL,
+    error_code VARCHAR(80) NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_system_job_name_started (job_name, started_at),
+    INDEX idx_system_job_status_started (status, started_at)
+);
+
 CREATE TABLE IF NOT EXISTS audit_logs (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     actor_type VARCHAR(30) NOT NULL,
@@ -330,11 +384,11 @@ INSERT INTO advisors (id, name, email, phone, faculty, department, students, sta
 ON DUPLICATE KEY UPDATE name = VALUES(name), email = VALUES(email), department = VALUES(department);
 
 INSERT INTO students (id, code, first_name, last_name, email, phone, faculty, major, year_level, advisor_id, project_id, status) VALUES
-('STU001', '66010001', 'Narin', 'Sukjai', 'narin@rmutp.ac.th', '089-100-0001', 'คณะบริหารธุรกิจ', 'บช.บ. บัญชีบัณฑิต (ได้รับการรับรองจากสภาวิชาชีพบัญชี)', 4, 'ADV001', 'PRJ001', 'Review'),
-('STU002', '66010002', 'Sirinya', 'Kamon', 'sirinya@rmutp.ac.th', '089-100-0002', 'คณะบริหารธุรกิจ', 'บธ.บ. สาขาวิชาการจัดการ', 4, 'ADV002', 'PRJ002', 'Approved'),
-('STU003', '66010003', 'Pawat', 'Rattanakul', 'pawat@rmutp.ac.th', '089-100-0003', 'คณะบริหารธุรกิจ', 'บธ.บ. สาขาวิชาการตลาด', 3, 'ADV003', 'PRJ003', 'Draft'),
-('STU004', '66010004', 'Kanyarat', 'Meesuk', 'kanyarat@rmutp.ac.th', '089-100-0004', 'คณะบริหารธุรกิจ', 'วท.บ. สาขาวิชาการวิเคราะห์ข้อมูลทางธุรกิจ', 4, 'ADV001', 'PRJ004', 'Pending'),
-('STU005', '66010005', 'Thanawat', 'Naksri', 'thanawat@rmutp.ac.th', '089-100-0005', 'คณะบริหารธุรกิจ', 'บธ.บ. สาขาวิชาระบบสารสนเทศและนวัตกรรมดิจิทัล', 4, 'ADV004', 'PRJ005', 'Completed')
+('STU001', '076250101001-6', 'Narin', 'Sukjai', 'narin@rmutp.ac.th', '0891000001', 'คณะบริหารธุรกิจ', 'บช.บ. บัญชีบัณฑิต (ได้รับการรับรองจากสภาวิชาชีพบัญชี)', 4, 'ADV001', 'PRJ001', 'Review'),
+('STU002', '076250101002-4', 'Sirinya', 'Kamon', 'sirinya@rmutp.ac.th', '0891000002', 'คณะบริหารธุรกิจ', 'บธ.บ. สาขาวิชาการจัดการ', 4, 'ADV002', 'PRJ002', 'Approved'),
+('STU003', '076250101003-2', 'Pawat', 'Rattanakul', 'pawat@rmutp.ac.th', '0891000003', 'คณะบริหารธุรกิจ', 'บธ.บ. สาขาวิชาการตลาด', 3, 'ADV003', 'PRJ003', 'Draft'),
+('STU004', '076250101004-0', 'Kanyarat', 'Meesuk', 'kanyarat@rmutp.ac.th', '0891000004', 'คณะบริหารธุรกิจ', 'วท.บ. สาขาวิชาการวิเคราะห์ข้อมูลทางธุรกิจ', 4, 'ADV001', 'PRJ004', 'Pending'),
+('STU005', '076250101005-8', 'Thanawat', 'Naksri', 'thanawat@rmutp.ac.th', '0891000005', 'คณะบริหารธุรกิจ', 'บธ.บ. สาขาวิชาระบบสารสนเทศและนวัตกรรมดิจิทัล', 4, 'ADV004', 'PRJ005', 'Completed')
 ON DUPLICATE KEY UPDATE first_name = VALUES(first_name), last_name = VALUES(last_name), status = VALUES(status);
 
 INSERT INTO projects (id, code, title, student_id, advisor_id, category, status, progress) VALUES
@@ -380,3 +434,45 @@ INSERT INTO settings (setting_key, setting_value) VALUES
 ('approval_mode', 'advisor-first'),
 ('notification_refresh', '15000')
 ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value);
+
+CREATE TABLE IF NOT EXISTS project_progress_history (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    project_id VARCHAR(20) NOT NULL,
+    document_id VARCHAR(20) NULL,
+    event_type VARCHAR(40) NOT NULL,
+    stage VARCHAR(30) NOT NULL,
+    chapter TINYINT UNSIGNED NULL,
+    previous_progress TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    current_progress TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    actor_type VARCHAR(20) NOT NULL DEFAULT 'system',
+    actor_id VARCHAR(40) NOT NULL DEFAULT 'system',
+    actor_name VARCHAR(180) NOT NULL DEFAULT 'System',
+    event_key CHAR(64) NOT NULL,
+    metadata_json JSON NULL,
+    occurred_at DATETIME NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_project_progress_event_key (event_key),
+    INDEX idx_project_progress_time (project_id, occurred_at, id),
+    INDEX idx_document_progress_time (document_id, occurred_at, id),
+    CONSTRAINT fk_progress_history_project FOREIGN KEY (project_id) REFERENCES projects(id) ON UPDATE CASCADE ON DELETE CASCADE,
+    CONSTRAINT fk_progress_history_document FOREIGN KEY (document_id) REFERENCES documents(id) ON UPDATE CASCADE ON DELETE SET NULL,
+    CONSTRAINT chk_progress_history_previous CHECK (previous_progress BETWEEN 0 AND 100),
+    CONSTRAINT chk_progress_history_current CHECK (current_progress BETWEEN 0 AND 100)
+);
+
+CREATE TABLE IF NOT EXISTS advisor_followups (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    project_id VARCHAR(20) NOT NULL,
+    advisor_id VARCHAR(20) NULL,
+    note VARCHAR(1000) NOT NULL,
+    issue VARCHAR(1000) NOT NULL DEFAULT '',
+    next_action VARCHAR(1000) NOT NULL DEFAULT '',
+    followup_at DATE NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_advisor_followups_project_time (project_id, created_at, id),
+    INDEX idx_advisor_followups_advisor (advisor_id, created_at),
+    INDEX idx_advisor_followups_date (followup_at),
+    CONSTRAINT fk_advisor_followups_project FOREIGN KEY (project_id) REFERENCES projects(id) ON UPDATE CASCADE ON DELETE CASCADE,
+    CONSTRAINT fk_advisor_followups_advisor FOREIGN KEY (advisor_id) REFERENCES advisors(id) ON UPDATE CASCADE ON DELETE SET NULL
+);

@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/../app/store.php';
+require_once __DIR__ . '/../app/ai-risk.php';
 require_once __DIR__ . '/../app/session.php';
 
 start_app_session();
@@ -16,7 +17,7 @@ function respond(array $payload, int $status = 200): void
     exit;
 }
 
-function seed_data(): array
+function advisor_seed_data(): array
 {
     return [
         'advisor' => [
@@ -61,21 +62,21 @@ function seed_data(): array
     ];
 }
 
-function load_data(): array
+function advisor_load_data(): array
 {
     $statement = shared_database_connection()->prepare('SELECT state_json FROM app_state WHERE state_key = :state_key');
     $statement->execute(['state_key' => 'advisor_portal']);
     $json = $statement->fetchColumn();
     if ($json === false) {
         $legacy = is_file(ADVISOR_DATA) ? json_decode((string) file_get_contents(ADVISOR_DATA), true) : null;
-        $data = is_array($legacy) ? $legacy : seed_data();
-        save_data($data);
+        $data = is_array($legacy) ? $legacy : advisor_seed_data();
+        advisor_save_data($data);
         return $data;
     }
-    return json_decode((string) $json, true) ?: seed_data();
+    return json_decode((string) $json, true) ?: advisor_seed_data();
 }
 
-function save_data(array $data): void
+function advisor_save_data(array $data): void
 {
     shared_database_connection()->prepare(
         'INSERT INTO app_state (state_key, state_json) VALUES (:state_key, :state_json)
@@ -109,12 +110,21 @@ function shared_app_data(): array
 
 function save_shared_app_data(array $appData): void
 {
-    shared_database_connection()->prepare(
-        'INSERT INTO app_state (state_key, state_json) VALUES (:state_key, :state_json)
-         ON DUPLICATE KEY UPDATE state_json = VALUES(state_json)'
-    )->execute(['state_key' => 'runtime', 'state_json' => json_encode($appData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)]);
-    $GLOBALS['advisor_shared_app_data_cache'] = $appData;
-    sync_shared_advisor_links($appData);
+    // Canonical writes must pass through save_data() so progress, relational
+    // rows, tracking history and project activity stay in one transaction.
+    save_data($appData);
+    $GLOBALS['advisor_shared_app_data_cache'] = load_data();
+}
+
+function advisor_assigned_to_project(array $appData, string $advisorId, string $projectId): bool
+{
+    return advisor_is_assigned_to_project($appData, $advisorId, $projectId);
+}
+
+function validated_followup_payload(array $payload): array
+{
+    try { return validate_advisor_followup_values($payload); }
+    catch (InvalidArgumentException $error) { respond(['success' => false, 'message' => $error->getMessage()], 422); }
 }
 
 function advisor_issue_project_code_if_eligible(array &$appData, string $groupId): bool
@@ -417,7 +427,7 @@ function add_shared_notification(array &$data, array $notification): void
     ], $notification));
 }
 
-$data = load_data();
+$data = advisor_load_data();
 $method = $_SERVER['REQUEST_METHOD'];
 $path = trim(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH), '/');
 $endpoint = trim((string) ($_GET['endpoint'] ?? preg_replace('#^.*api/advisor/?#', '', $path)), '/');
@@ -648,6 +658,43 @@ if ($endpoint === 'students') {
     respond(['success' => true, 'data' => advisor_students($data)]);
 }
 
+if (preg_match('#^project/([^/]+)/followups(?:/([0-9]+))?$#', $endpoint, $matches)) {
+    $projectId = (string) $matches[1];
+    $followupId = isset($matches[2]) ? (int) $matches[2] : 0;
+    $advisorId = (string) ($_SESSION['advisor_user']['id'] ?? '');
+    $appData = shared_app_data();
+    if (!advisor_assigned_to_project($appData, $advisorId, $projectId)) {
+        respond(['success' => false, 'message' => 'You are not assigned to this project.'], 403);
+    }
+    $pdo = shared_database_connection();
+    ensure_project_tracking_schema($pdo);
+    if ($method === 'GET') respond(['success' => true, 'data' => project_followups($projectId)]);
+    if ($method === 'POST') {
+        $values = validated_followup_payload(input_json());
+        $statement = $pdo->prepare('INSERT INTO advisor_followups (project_id, advisor_id, note, issue, next_action, followup_at)
+            VALUES (:project_id, :advisor_id, :note, :issue, :next_action, :followup_at)');
+        $statement->execute(array_merge($values, ['project_id' => $projectId, 'advisor_id' => $advisorId]));
+        respond(['success' => true, 'data' => project_followups($projectId), 'message' => 'Follow-up saved.']);
+    }
+    if ($followupId < 1) respond(['success' => false, 'message' => 'Follow-up not found.'], 404);
+    $owner = $pdo->prepare('SELECT advisor_id FROM advisor_followups WHERE id = :id AND project_id = :project_id');
+    $owner->execute(['id' => $followupId, 'project_id' => $projectId]);
+    if ((string) ($owner->fetchColumn() ?: '') !== $advisorId) respond(['success' => false, 'message' => 'Only the author can modify this follow-up.'], 403);
+    if (in_array($method, ['PUT', 'PATCH'], true)) {
+        $values = validated_followup_payload(input_json());
+        $statement = $pdo->prepare('UPDATE advisor_followups SET note=:note, issue=:issue, next_action=:next_action,
+            followup_at=:followup_at WHERE id=:id AND project_id=:project_id AND advisor_id=:advisor_id');
+        $statement->execute(array_merge($values, ['id' => $followupId, 'project_id' => $projectId, 'advisor_id' => $advisorId]));
+        respond(['success' => true, 'data' => project_followups($projectId), 'message' => 'Follow-up updated.']);
+    }
+    if ($method === 'DELETE') {
+        $pdo->prepare('DELETE FROM advisor_followups WHERE id=:id AND project_id=:project_id AND advisor_id=:advisor_id')
+            ->execute(['id' => $followupId, 'project_id' => $projectId, 'advisor_id' => $advisorId]);
+        respond(['success' => true, 'data' => project_followups($projectId), 'message' => 'Follow-up deleted.']);
+    }
+    respond(['success' => false, 'message' => 'Method not allowed.'], 405);
+}
+
 if (preg_match('#^stage/(proposal|draft|complete)$#', $endpoint, $matches)) {
     $advisorId = (string) ($_SESSION['advisor_user']['id'] ?? '');
     respond(['success' => true, 'data' => advisor_stage_rows(shared_app_data(), $advisorId, $matches[1])]);
@@ -673,6 +720,14 @@ if (preg_match('#^student/([^/]+)$#', $endpoint, $matches)) {
     }
     $projectId = $group['project_id'] ?? $student['project_id'] ?? '';
     $project = by_id($appData['projects'] ?? [], (string) $projectId) ?? [];
+    $riskScore = null;
+    if ($projectId !== '') {
+        try {
+            $riskScore = latest_project_risk_score((string) $projectId);
+        } catch (Throwable $error) {
+            error_log('[AI RISK] Unable to load advisor risk score: ' . $error->getMessage());
+        }
+    }
     $documents = array_values(array_filter(
         $appData['documents'] ?? [],
         static fn(array $document): bool => $group
@@ -699,7 +754,10 @@ if (preg_match('#^student/([^/]+)$#', $endpoint, $matches)) {
     ], $documents);
     $student['name'] = trim(($student['first_name'] ?? '') . ' ' . ($student['last_name'] ?? ''));
     $student['department'] = $student['major'] ?? '';
-    respond(['success' => true, 'data' => compact('student', 'group', 'members', 'project', 'documents', 'comments', 'timeline')]);
+    $tracking = $projectId !== '' ? project_tracking_payload((string) $projectId, $documents) : derive_project_tracking([]);
+    foreach ($tracking['followups'] ?? [] as &$followup) $followup['can_edit'] = (string) ($followup['advisor_id'] ?? '') === $advisorId;
+    unset($followup);
+    respond(['success' => true, 'data' => compact('student', 'group', 'members', 'project', 'documents', 'comments', 'timeline', 'riskScore', 'tracking')]);
 }
 
 if (preg_match('#^legacy-student/([^/]+)$#', $endpoint, $matches)) {
@@ -809,7 +867,7 @@ if (preg_match('#^legacy-(proposal|draft|complete)/(approve|reject|revision)$#',
                 $data['comments'][] = ['id' => 'CMT' . strtoupper(bin2hex(random_bytes(3))), 'student_id' => $doc['student_id'], 'document_id' => $doc['id'], 'author_id' => $data['advisor']['id'], 'author' => $data['advisor']['name'], 'message' => $payload['comment'], 'created_at' => date('Y-m-d H:i:s')];
             }
             add_notification($data, 'อัปเดตผลการพิจารณา', 'เอกสาร ' . $doc['title'] . ' ถูกปรับสถานะเป็น ' . $doc['status']);
-            save_data($data);
+            advisor_save_data($data);
             respond(['success' => true, 'data' => $doc, 'message' => 'บันทึกผลการพิจารณาเรียบร้อย']);
         }
     }
@@ -821,7 +879,7 @@ if ($endpoint === 'comment' && $method === 'POST') {
     $comment = ['id' => 'CMT' . strtoupper(bin2hex(random_bytes(3))), 'student_id' => $payload['student_id'] ?? '', 'document_id' => $payload['document_id'] ?? '', 'author_id' => $data['advisor']['id'], 'author' => $data['advisor']['name'], 'message' => $payload['message'] ?? '', 'created_at' => date('Y-m-d H:i:s')];
     $data['comments'][] = $comment;
     add_notification($data, 'ความคิดเห็นใหม่', 'เพิ่มความคิดเห็นให้นักศึกษาแล้ว', 'Comment');
-    save_data($data);
+    advisor_save_data($data);
     respond(['success' => true, 'data' => $comment, 'message' => 'เพิ่มความคิดเห็นเรียบร้อย']);
 }
 
@@ -879,7 +937,7 @@ if ($endpoint === 'legacy-message' && $method === 'POST') {
     $message = ['id' => 'MSG' . strtoupper(bin2hex(random_bytes(3))), 'student_id' => $student['id'], 'sender' => $data['advisor']['name'], 'receiver' => $student['name'], 'subject' => $payload['subject'] ?? 'ข้อความจากอาจารย์', 'message' => $payload['message'] ?? '', 'attachment' => '', 'read' => false, 'created_at' => date('Y-m-d H:i:s')];
     array_unshift($data['messages'], $message);
     add_notification($data, 'ส่งข้อความแล้ว', 'ส่งข้อความถึง ' . $student['name'], 'Message');
-    save_data($data);
+    advisor_save_data($data);
     respond(['success' => true, 'data' => $message, 'message' => 'ส่งข้อความเรียบร้อย']);
 }
 
@@ -958,7 +1016,7 @@ if ($endpoint === 'profile') {
                 $data['advisor'][$field] = trim((string) $payload[$field]);
             }
         }
-        save_data($data);
+        advisor_save_data($data);
         respond(['success' => true, 'data' => $data['advisor'], 'message' => 'อัปเดตโปรไฟล์เรียบร้อย']);
     }
     respond(['success' => true, 'data' => $data['advisor']]);

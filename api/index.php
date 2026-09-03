@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../app/store.php';
 require_once __DIR__ . '/../app/session.php';
 require_once __DIR__ . '/../app/storage.php';
+require_once __DIR__ . '/../app/system-health.php';
 start_app_session();
 
 header('Content-Type: application/json; charset=utf-8');
@@ -64,6 +65,54 @@ function uploaded_student_photo(string $studentId): ?string
     return 'uploads/student/' . $filename;
 }
 
+function normalize_student_phone(string $phone): string
+{
+    return preg_replace('/\D+/', '', trim($phone)) ?? '';
+}
+
+function validate_student_identity(array &$payload, array $students, string $currentId = ''): void
+{
+    $code = trim((string) ($payload['code'] ?? ''));
+    $phone = normalize_student_phone((string) ($payload['phone'] ?? ''));
+
+    if (!preg_match('/^\d{12}-\d$/', $code)) {
+        respond([
+            'success' => false,
+            'message' => 'รหัสนักศึกษาต้องเป็นตัวเลข 12 หลัก ตามด้วยขีดและเลขตรวจสอบ 1 หลัก เช่น 076250101001-6',
+        ], 422);
+    }
+    if (!preg_match('/^\d{9,10}$/', $phone)) {
+        respond(['success' => false, 'message' => 'เบอร์โทรศัพท์ต้องเป็นตัวเลข 9-10 หลัก'], 422);
+    }
+
+    foreach ($students as $student) {
+        if ((string) ($student['id'] ?? '') === $currentId) continue;
+        if (trim((string) ($student['code'] ?? '')) === $code) {
+            respond(['success' => false, 'message' => 'รหัสนักศึกษานี้มีอยู่ในระบบแล้ว'], 409);
+        }
+        if (normalize_student_phone((string) ($student['phone'] ?? '')) === $phone) {
+            respond(['success' => false, 'message' => 'เบอร์โทรศัพท์นี้มีอยู่ในระบบแล้ว'], 409);
+        }
+    }
+
+    $statement = database_connection()->prepare(
+        'SELECT code, phone FROM students
+         WHERE id <> :current_id AND (code = :code OR phone = :phone)
+         LIMIT 1'
+    );
+    $statement->execute(['current_id' => $currentId, 'code' => $code, 'phone' => $phone]);
+    $duplicate = $statement->fetch();
+    if (is_array($duplicate)) {
+        $message = (string) ($duplicate['code'] ?? '') === $code
+            ? 'รหัสนักศึกษานี้มีอยู่ในระบบแล้ว'
+            : 'เบอร์โทรศัพท์นี้มีอยู่ในระบบแล้ว';
+        respond(['success' => false, 'message' => $message], 409);
+    }
+
+    $payload['code'] = $code;
+    $payload['phone'] = $phone;
+}
+
 function authenticate_user(array $payload, array &$data): ?array
 {
     $email = trim((string) ($payload['email'] ?? ''));
@@ -106,6 +155,7 @@ function authenticate_user(array $payload, array &$data): ?array
 
     foreach ($data['students'] as &$student) {
         if (($student['email'] ?? '') === $email || ($student['code'] ?? '') === $email) {
+            if (($student['status'] ?? '') === 'Inactive') break;
             $expectedPassword = (string) ($student['code'] ?? '');
             $hasPasswordHash = !empty($student['password_hash']);
             $passwordValid = $hasPasswordHash
@@ -212,9 +262,65 @@ if (($_SESSION['app_user']['role'] ?? '') !== 'admin') {
 
 require_csrf_token();
 
+if ($resource === 'system-health') {
+    if ($method === 'GET') {
+        respond(['success' => true, 'data' => system_health_snapshot()]);
+    }
+    if ($method !== 'POST') respond(['success' => false, 'message' => 'Method not allowed.'], 405);
+    if ($action === 'test-storage') {
+        try {
+            $result = system_health_storage_probe();
+            respond(['success' => true, 'data' => $result, 'message' => 'ทดสอบ Storage สำเร็จ และลบไฟล์ชั่วคราวแล้ว']);
+        } catch (Throwable $error) {
+            error_log('[SYSTEM HEALTH ACTION] storage: ' . $error->getMessage());
+            respond(['success' => false, 'message' => 'ทดสอบ Storage ไม่สำเร็จ กรุณาตรวจสอบการตั้งค่า'], 503);
+        }
+    }
+    if ($action === 'test-email') {
+        $config = env_config();
+        $recipient = trim((string) ($config['ADMIN_RECOVERY_EMAIL'] ?? ($_SESSION['app_user']['email'] ?? '')));
+        if (!filter_var($recipient, FILTER_VALIDATE_EMAIL)) respond(['success' => false, 'message' => 'กรุณากำหนด ADMIN_RECOVERY_EMAIL เป็นอีเมลที่ถูกต้อง'], 422);
+        try {
+            $result = system_health_test_email($recipient);
+            respond(['success' => true, 'data' => ['transport' => $result['transport'] ?? ''], 'message' => 'ส่งอีเมลทดสอบแล้ว กรุณาตรวจสอบกล่องจดหมายของผู้ดูแล']);
+        } catch (Throwable $error) {
+            error_log('[SYSTEM HEALTH ACTION] email: ' . $error->getMessage());
+            respond(['success' => false, 'message' => 'ส่งอีเมลทดสอบไม่สำเร็จ กรุณาตรวจสอบการตั้งค่าอีเมล'], 503);
+        }
+    }
+    respond(['success' => false, 'message' => 'Unknown diagnostic action.'], 404);
+}
+
 if ($resource === 'dashboard') {
     $statuses = array_count_values(array_column($data['projects'], 'status'));
     $uploads = array_count_values(array_column($data['documents'], 'type'));
+    $riskOverview = [
+        'total' => 0,
+        'latest_calculated_at' => null,
+        'counts' => ['low' => 0, 'watch' => 0, 'high' => 0, 'critical' => 0],
+    ];
+    try {
+        $riskRows = database_connection()->query(
+            'SELECT LOWER(risk_level) AS risk_level, COUNT(*) AS total, MAX(calculated_at) AS latest_calculated_at
+             FROM project_risk_scores
+             GROUP BY LOWER(risk_level)'
+        )->fetchAll();
+        foreach ($riskRows as $riskRow) {
+            $level = (string) ($riskRow['risk_level'] ?? '');
+            if (!array_key_exists($level, $riskOverview['counts'])) {
+                continue;
+            }
+            $count = (int) ($riskRow['total'] ?? 0);
+            $riskOverview['counts'][$level] = $count;
+            $riskOverview['total'] += $count;
+            $calculatedAt = $riskRow['latest_calculated_at'] ?? null;
+            if ($calculatedAt && (!$riskOverview['latest_calculated_at'] || $calculatedAt > $riskOverview['latest_calculated_at'])) {
+                $riskOverview['latest_calculated_at'] = $calculatedAt;
+            }
+        }
+    } catch (Throwable $exception) {
+        // Keep the dashboard available while the optional risk-score migration is pending.
+    }
     $dashboardStudents = array_map(static fn(array $student): array => [
         'id' => $student['id'] ?? '',
         'code' => $student['code'] ?? '',
@@ -243,6 +349,7 @@ if ($resource === 'dashboard') {
             ],
             'project_status' => $statuses,
             'uploads' => $uploads,
+            'risk_overview' => $riskOverview,
             'activities' => array_slice($data['activities'], 0, 5),
             'files' => array_slice($data['documents'], 0, 5),
             'notifications' => array_slice($data['notifications'], 0, 5),
@@ -263,12 +370,15 @@ if ($resource === 'students') {
             }
             $advisor = find_row($data['advisors'], $student['advisor_id'] ?? '');
             $project = find_row($data['projects'], $student['project_id'] ?? '');
+            $files = array_values(array_filter($data['documents'], fn($row) => ($row['student_id'] ?? '') === $id));
+            $tracking = !empty($project['id']) ? project_tracking_payload((string) $project['id'], $files) : derive_project_tracking([]);
             respond(['success' => true, 'data' => [
                 'student' => $student,
                 'advisor' => $advisor,
                 'project' => $project,
                 'timeline' => array_values(array_filter($data['approvals'], fn($row) => ($row['student_id'] ?? '') === $id)),
-                'files' => array_values(array_filter($data['documents'], fn($row) => ($row['student_id'] ?? '') === $id)),
+                'files' => $files,
+                'tracking' => $tracking,
                 'comments' => array_values(array_filter($data['comments'], fn($row) => ($row['student_id'] ?? '') === $id)),
                 'approvals' => array_values(array_filter($data['approvals'], fn($row) => ($row['student_id'] ?? '') === $id)),
             ]]);
@@ -287,6 +397,7 @@ if ($resource === 'students') {
         if (!in_array($payload['major'] ?? '', app_majors(), true)) {
             respond(['success' => false, 'message' => 'Please select a valid major.'], 422);
         }
+        validate_student_identity($payload, $data['students'] ?? []);
         $payload['id'] = next_student_id($data['students']);
         $payload['photo'] = uploaded_student_photo($payload['id']) ?? 'assets/img/profile-student.svg';
         $payload['status'] = $payload['status'] ?? 'Pending';
@@ -299,12 +410,14 @@ if ($resource === 'students') {
         $payload = request_json();
         unset($payload['_method']);
         unset($payload['advisor_id']);
+        $studentId = (string) ($payload['id'] ?? '');
         if (isset($payload['faculty']) && !in_array($payload['faculty'], app_faculties(), true)) {
             respond(['success' => false, 'message' => 'Please select a valid faculty.'], 422);
         }
         if (isset($payload['major']) && !in_array($payload['major'], app_majors(), true)) {
             respond(['success' => false, 'message' => 'Please select a valid major.'], 422);
         }
+        validate_student_identity($payload, $data['students'] ?? [], $studentId);
         foreach ($data['students'] as &$student) {
             if (($student['id'] ?? '') === ($payload['id'] ?? '')) {
                 $uploadedPhoto = uploaded_student_photo((string) $student['id']);
@@ -332,6 +445,9 @@ if ($resource === 'students') {
     }
     if ($method === 'DELETE') {
         $id = $_GET['id'] ?? '';
+        if (!find_row($data['students'] ?? [], $id)) {
+            respond(['success' => false, 'message' => 'Student not found'], 404);
+        }
         foreach ($data['groups'] ?? [] as $group) {
             if (in_array($id, $group['member_ids'] ?? [], true)) {
                 respond(['success' => false, 'message' => 'Remove the student from the project group before deleting the account.'], 409);
@@ -344,9 +460,17 @@ if ($resource === 'students') {
         if ($hasRelatedRecords) {
             respond(['success' => false, 'message' => 'This student has project documents and cannot be deleted.'], 409);
         }
-        delete_student_from_database($id);
         $data['students'] = array_values(array_filter($data['students'], fn($row) => ($row['id'] ?? '') !== $id));
-        save_data($data);
+        $pdo = database_connection();
+        $pdo->beginTransaction();
+        try {
+            delete_student_from_database($id);
+            save_data($data);
+            $pdo->commit();
+        } catch (Throwable $error) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            throw $error;
+        }
         respond(['success' => true, 'message' => 'Student deleted']);
     }
 }
@@ -393,6 +517,68 @@ if ($resource === 'advisors') {
         $responseAdvisor = $payload;
         unset($responseAdvisor['password_hash']);
         respond(['success' => true, 'data' => $responseAdvisor, 'message' => 'Advisor account saved']);
+    }
+    if ($method === 'DELETE') {
+        $id = (string) ($_GET['id'] ?? '');
+        if (!find_row($data['advisors'] ?? [], $id)) {
+            respond(['success' => false, 'message' => 'Advisor not found'], 404);
+        }
+
+        $data['advisors'] = array_values(array_filter(
+            $data['advisors'] ?? [],
+            static fn(array $advisor): bool => (string) ($advisor['id'] ?? '') !== $id
+        ));
+        foreach ($data['students'] ?? [] as &$student) {
+            if ((string) ($student['advisor_id'] ?? '') === $id) $student['advisor_id'] = '';
+            $student['advisor_roles'] = array_filter(
+                $student['advisor_roles'] ?? [],
+                static fn($advisorId): bool => (string) $advisorId !== $id
+            );
+        }
+        unset($student);
+        foreach ($data['projects'] ?? [] as &$project) {
+            if ((string) ($project['advisor_id'] ?? '') === $id) $project['advisor_id'] = '';
+        }
+        unset($project);
+        foreach ($data['groups'] ?? [] as &$group) {
+            $group['advisor_roles'] = array_filter(
+                $group['advisor_roles'] ?? [],
+                static fn($advisorId): bool => (string) $advisorId !== $id
+            );
+        }
+        unset($group);
+        $data['advisor_invitations'] = array_values(array_filter(
+            $data['advisor_invitations'] ?? [],
+            static fn(array $row): bool => (string) ($row['advisor_id'] ?? '') !== $id
+        ));
+        $data['notifications'] = array_values(array_filter(
+            $data['notifications'] ?? [],
+            static fn(array $row): bool => (string) ($row['advisor_id'] ?? '') !== $id
+        ));
+        foreach ($data['messages'] ?? [] as &$message) {
+            if ((string) ($message['advisor_id'] ?? '') === $id) $message['advisor_id'] = '';
+        }
+        unset($message);
+        foreach ($data['comments'] ?? [] as &$comment) {
+            if ((string) ($comment['author_id'] ?? '') === $id) $comment['author_id'] = '';
+        }
+        unset($comment);
+        foreach ($data['approvals'] ?? [] as &$approval) {
+            if ((string) ($approval['reviewer_id'] ?? '') === $id) $approval['reviewer_id'] = '';
+        }
+        unset($approval);
+
+        $pdo = database_connection();
+        $pdo->beginTransaction();
+        try {
+            delete_advisor_from_database($id);
+            save_data($data);
+            $pdo->commit();
+        } catch (Throwable $error) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            throw $error;
+        }
+        respond(['success' => true, 'message' => 'Advisor deleted']);
     }
 }
 
@@ -555,7 +741,123 @@ if ($resource === 'reports') {
 
 if ($resource === 'import' && $method === 'POST') {
     $rows = request_json()['rows'] ?? [];
-    respond(['success' => true, 'imported' => count($rows), 'message' => count($rows) . ' rows imported']);
+    if (!is_array($rows) || $rows === [] || count($rows) > 500) {
+        respond(['success' => false, 'message' => 'กรุณาเลือกไฟล์ที่มีข้อมูลนักศึกษา 1-500 รายการ'], 422);
+    }
+
+    $codes = [];
+    $phones = [];
+    $emails = [];
+    foreach ($data['students'] ?? [] as $student) {
+        $studentId = (string) ($student['id'] ?? '');
+        $codes[trim((string) ($student['code'] ?? ''))] = $studentId;
+        $normalizedPhone = normalize_student_phone((string) ($student['phone'] ?? ''));
+        if ($normalizedPhone !== '') $phones[$normalizedPhone] = $studentId;
+        $emails[strtolower(trim((string) ($student['email'] ?? '')))] = $studentId;
+    }
+    foreach (database_connection()->query('SELECT id, code, email, phone FROM students')->fetchAll() as $student) {
+        $studentId = (string) ($student['id'] ?? '');
+        $codeKey = trim((string) ($student['code'] ?? ''));
+        $emailKey = strtolower(trim((string) ($student['email'] ?? '')));
+        $phoneKey = normalize_student_phone((string) ($student['phone'] ?? ''));
+        if ($codeKey !== '') $codes[$codeKey] = $studentId;
+        if ($emailKey !== '') $emails[$emailKey] = $studentId;
+        if ($phoneKey !== '') $phones[$phoneKey] = $studentId;
+    }
+
+    $errors = [];
+    $newStudents = [];
+    $skipped = 0;
+    $nextStudentNumber = (int) substr(next_student_id($data['students'] ?? []), 3);
+    foreach (array_values($rows) as $index => $row) {
+        $rowNumber = $index + 1;
+        if (!is_array($row)) {
+            $errors[] = "รายการ {$rowNumber}: รูปแบบข้อมูลไม่ถูกต้อง";
+            continue;
+        }
+        $code = trim((string) ($row['code'] ?? ''));
+        $phone = normalize_student_phone((string) ($row['phone'] ?? ''));
+        $email = strtolower(str_replace('-', '', $code) . '@rmutp.com');
+        $firstName = trim((string) ($row['first_name'] ?? ''));
+        $lastName = trim((string) ($row['last_name'] ?? ''));
+        $faculty = trim((string) ($row['faculty'] ?? ''));
+        $major = trim((string) ($row['major'] ?? ''));
+        $yearLevel = (int) ($row['year_level'] ?? 0);
+
+        if (!preg_match('/^\d{12}-\d$/', $code)) {
+            $errors[] = "รายการ {$rowNumber}: รหัสนักศึกษาไม่ถูกต้อง";
+            continue;
+        }
+        $existingCodeId = (string) ($codes[$code] ?? '');
+        $existingEmailId = (string) ($emails[$email] ?? '');
+        if ($existingCodeId !== '' || $existingEmailId !== '') {
+            if ($existingCodeId !== '' && $existingEmailId !== '' && $existingCodeId !== $existingEmailId) {
+                $errors[] = "รายการ {$rowNumber}: รหัสและอีเมลตรงกับคนละบัญชี กรุณาตรวจสอบข้อมูลเดิม";
+            } else {
+                $skipped++;
+            }
+            continue;
+        }
+        if ($phone !== '' && !preg_match('/^\d{9,10}$/', $phone)) {
+            $errors[] = "รายการ {$rowNumber}: เบอร์โทรต้องเป็นตัวเลข 9-10 หลัก หรือเว้นว่างไว้";
+        } elseif ($phone !== '' && isset($phones[$phone])) {
+            $errors[] = "รายการ {$rowNumber}: เบอร์โทร {$phone} มีอยู่ในระบบแล้ว";
+        }
+        if ($firstName === '' || $lastName === '') $errors[] = "รายการ {$rowNumber}: ชื่อหรือนามสกุลไม่ครบ";
+        if (!in_array($faculty, app_faculties(), true)) $errors[] = "รายการ {$rowNumber}: คณะไม่ถูกต้อง";
+        if (!in_array($major, app_majors(), true)) $errors[] = "รายการ {$rowNumber}: สาขาไม่ถูกต้อง";
+        if ($yearLevel < 1 || $yearLevel > 20) $errors[] = "รายการ {$rowNumber}: ชั้นปีไม่ถูกต้อง";
+        $newStudentId = 'STU' . str_pad((string) $nextStudentNumber++, 3, '0', STR_PAD_LEFT);
+        $codes[$code] = $newStudentId;
+        if ($phone !== '') $phones[$phone] = $newStudentId;
+        $emails[$email] = $newStudentId;
+        $newStudents[] = [
+            'id' => $newStudentId,
+            'code' => $code,
+            'first_name' => $firstName,
+            'last_name' => $lastName,
+            'email' => $email,
+            'phone' => $phone,
+            'faculty' => $faculty,
+            'major' => $major,
+            'year_level' => $yearLevel,
+            'advisor_id' => '',
+            'advisor_roles' => [],
+            'project_id' => '',
+            'status' => in_array((string) ($row['status'] ?? ''), ['Active', 'Completed', 'Inactive'], true)
+                ? (string) $row['status']
+                : 'Active',
+            'photo' => 'assets/img/profile-student.svg',
+        ];
+    }
+    if ($errors) {
+        respond([
+            'success' => false,
+            'message' => implode(' | ', array_slice($errors, 0, 5)),
+            'errors' => $errors,
+        ], 422);
+    }
+
+    if ($newStudents) {
+        $data['students'] = array_merge($data['students'] ?? [], $newStudents);
+        $pdo = database_connection();
+        $pdo->beginTransaction();
+        try {
+            save_data($data);
+            $pdo->commit();
+        } catch (Throwable $error) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            throw $error;
+        }
+    }
+    $message = 'เพิ่มนักศึกษาใหม่ ' . count($newStudents) . ' รายการ';
+    if ($skipped > 0) $message .= ' และข้ามรายชื่อเดิม ' . $skipped . ' รายการ';
+    respond([
+        'success' => true,
+        'imported' => count($newStudents),
+        'skipped' => $skipped,
+        'message' => $message,
+    ]);
 }
 
 if ($resource === 'export') {

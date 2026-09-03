@@ -35,6 +35,14 @@ function Read-AppUrl {
     return $null
 }
 
+function Read-EnvSetting([string]$Name, [string]$Default = '') {
+    if (-not (Test-Path -LiteralPath $envFile)) { return $Default }
+    foreach ($line in [IO.File]::ReadAllLines($envFile)) {
+        if ($line -match ('^' + [regex]::Escape($Name) + '=(.*)$')) { return $matches[1].Trim().Trim('"').Trim("'") }
+    }
+    return $Default
+}
+
 function Set-AppUrl([string]$Url) {
     if (-not (Test-Path -LiteralPath $envFile)) { return }
     $utf8NoBom = New-Object Text.UTF8Encoding($false)
@@ -117,6 +125,16 @@ try {
         }
         if (-not $ready) {
             throw "Apache is running but the login page did not respond: $loginUrl"
+        }
+    }
+
+    $aiWorkerEnabled = Read-EnvSetting 'AI_WORKER_ENABLED' 'true'
+    if ($aiWorkerEnabled -notmatch '^(0|false|no|off)$') {
+        $phpExe = Join-Path $xamppRoot 'php\php.exe'
+        $workerScript = Join-Path $projectRoot 'scripts\ai-title-worker.php'
+        if ((Test-Path -LiteralPath $phpExe) -and (Test-Path -LiteralPath $workerScript)) {
+            Start-Process -FilePath $phpExe -ArgumentList @($workerScript, '--watch', '--quiet') -WindowStyle Hidden
+            Write-Host '[OK] AI project-title worker is running in the background.' -ForegroundColor Green
         }
     }
 

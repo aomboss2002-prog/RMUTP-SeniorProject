@@ -5,7 +5,7 @@
         $(selector).html(rows.map(renderer).join('') || '<div class="list-group-item text-muted">ไม่มีข้อมูล</div>');
     }
 
-    function chart(id, type, labels, values, colors) {
+    function chart(id, type, labels, values, colors, showLegend = type !== 'bar') {
         const ctx = document.getElementById(id);
         if (!ctx || !window.Chart) {
             return;
@@ -36,13 +36,56 @@
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: { legend: { display: type !== 'bar', position: 'bottom' } },
+                plugins: { legend: { display: showLegend, position: 'bottom' } },
                 scales: type === 'bar' ? {
                     x: { grid: { display: false }, ticks: { precision: 0 } },
                     y: { beginAtZero: true, ticks: { precision: 0 } }
                 } : undefined
             }
         });
+    }
+
+    function formatDashboardDate(value) {
+        const normalized = String(value || '').replace(' ', 'T');
+        const date = new Date(normalized);
+        if (!value || Number.isNaN(date.getTime())) {
+            return String(value || '');
+        }
+        return date.toLocaleString('th-TH', {
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    }
+
+    function renderRiskOverview(riskOverview) {
+        const risk = riskOverview || {};
+        const counts = Object.assign({ low: 0, watch: 0, high: 0, critical: 0 }, risk.counts || {});
+        const levels = ['low', 'watch', 'high', 'critical'];
+        const values = levels.map((level) => Number(counts[level]) || 0);
+        const total = Number(risk.total) || values.reduce((sum, value) => sum + value, 0);
+        const attention = values[2] + values[3];
+
+        $('#riskCalculatedTotal').text(total.toLocaleString('th-TH'));
+        $('#riskNeedsAttention').text(attention.toLocaleString('th-TH'));
+        levels.forEach((level, index) => $(`[data-risk-count="${level}"]`).text(values[index].toLocaleString('th-TH')));
+        $('#riskLatestCalculated').text(
+            risk.latest_calculated_at
+                ? `คำนวณล่าสุด ${formatDashboardDate(risk.latest_calculated_at)}`
+                : 'ยังไม่มีผลการประเมินจาก AI'
+        );
+        $('#riskOverviewCard').attr('aria-busy', 'false').toggleClass('has-attention', attention > 0);
+
+        chart(
+            'riskDistributionChart',
+            'doughnut',
+            ['Low', 'Watch', 'High', 'Critical'],
+            values,
+            ['#168A4A', '#D59A00', '#D45A1F', '#8F1D2C'],
+            false
+        );
     }
 
     function loadDashboard() {
@@ -56,6 +99,8 @@
 
             const uploads = data.uploads || {};
             chart('uploadChart', 'bar', Object.keys(uploads).map(App.label), Object.values(uploads), ['#0B3C8C', '#F4C542', '#168A4A']);
+
+            renderRiskOverview(data.risk_overview);
 
             renderList('#recentActivities', data.activities, (row) => `
                 <div class="list-group-item">

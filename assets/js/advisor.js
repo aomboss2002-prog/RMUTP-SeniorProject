@@ -7,6 +7,8 @@
     let advisorMessagePage = 1;
     const advisorMessagesPerPage = 5;
     const pendingGetRequests = new Map();
+    let advisorTrackingData = null;
+    let advisorTrackingProjectId = '';
 
     function page() {
         return $('body').data('page');
@@ -121,7 +123,7 @@
                 return;
             }
             $(target + ' tbody').html(rows.map((row) => `<tr>
-                <td>${App.escapeHtml(row.code)}</td><td>${App.escapeHtml(row.name)}</td><td>${App.escapeHtml(row.department)}</td><td>${App.escapeHtml(row.project_title)}</td>
+                <td>${App.escapeHtml(row.code)}</td><td>${App.escapeHtml(row.name)}</td><td>${App.escapeHtml(row.department)}</td><td title="${App.escapeHtml(row.project_title)}">${App.escapeHtml(row.project_title)}</td>
                 <td>${App.badge(row.proposal)}</td><td>${App.badge(row.draft)}</td><td>${App.badge(row.complete)}</td><td>${App.badge(row.status)}</td>
                 <td class="text-end"><div class="row-actions single"><a class="row-action view" href="${App.url(`advisor/student-detail.php?id=${row.id}`)}" title="ดูรายละเอียด" aria-label="ดูรายละเอียด"><i class="fa-regular fa-eye"></i><span>ดูข้อมูล</span></a></div></td>
             </tr>`).join(''));
@@ -152,10 +154,35 @@
         $(selector).html(rows.map((row) => `<div class="timeline-item"><strong>${App.escapeHtml(row.title)}</strong><span class="d-block text-muted">${App.escapeHtml(row.date || 'รอดำเนินการ')}</span>${App.badge(row.status)}</div>`).join(''));
     }
 
+    function renderAdvisorRiskScore(risk) {
+        const container = $('#advisorProjectRiskScore');
+        if (!container.length) return;
+        if (!risk) {
+            container.removeClass('d-none').html('<div class="alert alert-light border mb-0"><i class="fa-solid fa-clock-rotate-left me-2"></i>Worker กำลังเตรียม Risk Score ของโครงงาน</div>');
+            return;
+        }
+        const styles = { low: 'success', watch: 'info', high: 'warning', critical: 'danger' };
+        const labels = { low: 'ความเสี่ยงต่ำ', watch: 'ควรเฝ้าระวัง', high: 'ความเสี่ยงสูง', critical: 'วิกฤต' };
+        const factors = (risk.factors || []).slice(0, 5);
+        container.removeClass('d-none').html(`
+            <div class="alert alert-${styles[risk.risk_level] || 'secondary'} mb-0">
+                <div class="d-flex justify-content-between flex-wrap gap-2">
+                    <strong><i class="fa-solid fa-chart-line me-2"></i>Risk Score ${Number(risk.score || 0)}% — ${labels[risk.risk_level] || '-'}</strong>
+                    <small>ความมั่นใจ ${Number(risk.confidence || 0)}%</small>
+                </div>
+                ${factors.length ? `<ul class="mb-2 mt-2">${factors.map((factor) => `<li>${App.escapeHtml(factor.message || '')} <strong>+${Number(factor.points || 0)}</strong></li>`).join('')}</ul>` : '<p class="my-2">ยังไม่พบสัญญาณว่างานหยุดนิ่ง</p>'}
+                <div class="small"><strong>คำแนะนำ:</strong> ${App.escapeHtml(risk.recommendation || '-')}</div>
+            </div>`);
+    }
+
     function loadStudentDetail() {
         const id = $('#advisorStudentId').val();
         request(`student/${id}`).done((response) => {
-            const { student, group, members, project, documents, comments, timeline } = response.data;
+            const { student, group, members, project, documents, comments, timeline, riskScore, tracking } = response.data;
+            advisorTrackingData = tracking || null;
+            advisorTrackingProjectId = project?.id || '';
+            ProjectTrackingUI.renderAll({ progress: '#advisorTrackingProgress', summary: '#advisorTrackingSummary', milestones: '#advisorMilestones', history: '#advisorTrackingHistory', followups: '#advisorFollowupList', chart: 'advisorTrackingChart', editable: true }, tracking);
+            renderAdvisorRiskScore(riskScore);
             $('#detailStudentPhoto').attr('src', App.url(`api/profile-photo.php?id=${encodeURIComponent(student.id)}`));
             $('#detailStudentName').text(student.name);
             $('#detailStudentCode').text(student.code);
@@ -193,7 +220,7 @@
             const rows = response.data || [];
             $('#advisorStageTable tbody').html(rows.map(({ document, student, project }) => `<tr>
                 <td>${App.escapeHtml(student.code)}<span class="d-block text-muted">${App.escapeHtml(student.name)}</span></td>
-                <td>${App.escapeHtml(project.title)}</td><td>${document.type === 'draft' ? `<strong>บทที่ ${Number(document.chapter || 0)}</strong><span class="d-block text-muted">${App.escapeHtml(document.filename)}</span>` : App.escapeHtml(document.filename)}</td><td>${App.badge(document.status)}</td><td>${App.escapeHtml(document.uploaded_at)}</td>
+                <td title="${App.escapeHtml(project.title)}">${App.escapeHtml(project.title)}</td><td title="${App.escapeHtml(document.filename)}">${document.type === 'draft' ? `<strong>บทที่ ${Number(document.chapter || 0)}</strong><span class="d-block text-muted">${App.escapeHtml(document.filename)}</span>` : App.escapeHtml(document.filename)}</td><td>${App.badge(document.status)}</td><td>${App.escapeHtml(document.uploaded_at)}</td>
                 <td class="text-end">${documentActions(document)}</td>
             </tr>`).join(''));
             App.enhanceTable('#advisorStageTable');
@@ -308,6 +335,22 @@
             event.preventDefault();
             request('profile', { method: 'POST', data: new FormData(this), processData: false, contentType: false }).done((response) => App.toast(response.message));
         });
+        $('#advisorFollowupForm').on('submit', function (event) {
+            event.preventDefault();
+            if (!advisorTrackingProjectId) return App.toast('ยังไม่มีโครงงานสำหรับบันทึกการติดตาม', 'error');
+            const id = Number($('#advisorFollowupId').val() || 0);
+            const payload = { note: $('#advisorFollowupNote').val(), issue: $('#advisorFollowupIssue').val(), next_action: $('#advisorFollowupNextAction').val(), followup_at: $('#advisorFollowupDate').val() };
+            const button = $(this).find('button[type="submit"]').prop('disabled', true);
+            request(`project/${advisorTrackingProjectId}/followups${id ? `/${id}` : ''}`, { method: id ? 'PUT' : 'POST', data: JSON.stringify(payload), contentType: 'application/json' })
+                .done((response) => { App.toast(response.message); resetFollowupForm(); loadStudentDetail(); })
+                .always(() => button.prop('disabled', false));
+        });
+    }
+
+    function resetFollowupForm() {
+        $('#advisorFollowupForm')[0]?.reset();
+        $('#advisorFollowupId').val('');
+        $('#advisorFollowupCancel').addClass('d-none');
     }
 
     $(document).on('click', '#advisorNotificationBell', function (event) {
@@ -347,6 +390,21 @@
     });
     $(document).on('click', '[data-action="advisor-export-excel"]', function (event) { event.preventDefault(); App.toast('เตรียมไฟล์ Excel แล้ว'); });
     $(document).on('click', '[data-action="advisor-export-pdf"]', function (event) { event.preventDefault(); window.print(); });
+    $(document).on('click', '[data-action="edit-followup"]', function () {
+        const row = (advisorTrackingData?.followups || []).find((item) => Number(item.id) === Number($(this).data('id')));
+        if (!row) return;
+        $('#advisorFollowupId').val(row.id); $('#advisorFollowupNote').val(row.note); $('#advisorFollowupIssue').val(row.issue);
+        $('#advisorFollowupNextAction').val(row.next_action); $('#advisorFollowupDate').val(row.followup_at || '');
+        $('#advisorFollowupCancel').removeClass('d-none'); $('#advisorFollowupNote').trigger('focus');
+    });
+    $(document).on('click', '#advisorFollowupCancel', resetFollowupForm);
+    $(document).on('click', '[data-action="delete-followup"]', function () {
+        const id = Number($(this).data('id'));
+        Swal.fire({ title: 'ลบบันทึกการติดตาม?', text: 'การดำเนินการนี้ไม่สามารถย้อนกลับได้', icon: 'warning', showCancelButton: true, confirmButtonText: 'ลบ', cancelButtonText: 'ยกเลิก', confirmButtonColor: '#b42318' }).then((result) => {
+            if (!result.isConfirmed) return;
+            request(`project/${advisorTrackingProjectId}/followups/${id}`, { method: 'DELETE' }).done((response) => { App.toast(response.message); resetFollowupForm(); loadStudentDetail(); });
+        });
+    });
 
     $(function () {
         const current = page();

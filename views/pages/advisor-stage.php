@@ -9,7 +9,7 @@ page_header($meta['title'] ?? $stageName, 'เปิดดู PDF ดาวน�
 <section class="card">
     <div class="card-header clean-header"><h2>รายการรอพิจารณา: <?= e($stageName) ?></h2></div>
     <div class="table-responsive">
-        <table class="table align-middle datatable" id="advisorStageTable">
+        <table class="table align-middle datatable documents-review-table" id="advisorStageTable">
             <thead><tr><th>นักศึกษา</th><th>โครงงาน</th><th>ไฟล์</th><th>สถานะ</th><th>วันที่ส่ง</th><th>จัดการ</th></tr></thead>
             <tbody></tbody>
         </table>

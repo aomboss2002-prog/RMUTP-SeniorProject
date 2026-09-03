@@ -9,7 +9,7 @@
         </select>
     </div>
     <div class="table-responsive">
-        <table class="table align-middle datatable" id="projectsTable">
+        <table class="table align-middle datatable projects-table-wide" id="projectsTable">
             <thead><tr><th>รหัส</th><th>ชื่อโครงงาน</th><th>นักศึกษา</th><th>อาจารย์ที่ปรึกษา</th><th>ความคืบหน้า</th><th>สถานะ</th><th></th></tr></thead>
             <tbody></tbody>
         </table>

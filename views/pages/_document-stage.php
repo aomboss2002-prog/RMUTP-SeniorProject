@@ -2,7 +2,7 @@
     ['label' => 'เอกสาร', 'href' => route_url('documents'), 'icon' => 'fa-folder-open', 'class' => 'btn btn-outline-primary'],
 ]); ?>
 <section class="row g-4">
-    <div class="col-xl-5">
+    <div class="col-xl-3">
         <form class="card upload-card" id="documentUploadForm" data-type="<?= e($stage) ?>">
             <input type="hidden" name="type" value="<?= e($stage) ?>">
             <div class="row g-3">
@@ -34,7 +34,7 @@
             </div>
         </form>
     </div>
-    <div class="col-xl-7">
+    <div class="col-xl-9">
         <div class="card">
             <div class="card-header clean-header"><h2>ไฟล์<?= e($stageTitle) ?></h2></div>
             <div class="table-responsive">

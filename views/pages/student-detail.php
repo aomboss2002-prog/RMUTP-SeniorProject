@@ -32,6 +32,15 @@ page_header('รายละเอียดนักศึกษา', 'ตรว
     </div>
 </section>
 
+<section class="card mt-4 tracking-panel" aria-labelledby="adminProjectPulseTitle">
+    <div class="card-header clean-header"><div><h2 id="adminProjectPulseTitle">Project Pulse</h2><small class="text-muted">มุมมองตรวจสอบประวัติแบบอ่านอย่างเดียว</small></div><strong id="adminTrackingProgress">0%</strong></div>
+    <div class="card-body"><div class="tracking-action-callout" id="adminTrackingSummary" role="status" aria-live="polite"></div><ol class="milestone-rail mt-4" id="adminMilestones" aria-label="ลำดับความก้าวหน้าโครงงาน"></ol><div class="tracking-chart-wrap mt-4"><canvas id="adminTrackingChart" aria-label="กราฟความก้าวหน้าตามเวลา"></canvas></div></div>
+</section>
+<section class="row g-4 mt-1">
+    <div class="col-xl-7"><div class="card h-100"><div class="card-header clean-header"><h2>ประวัติความก้าวหน้า</h2></div><div class="card-body tracking-history" id="adminTrackingHistory"></div></div></div>
+    <div class="col-xl-5"><div class="card h-100"><div class="card-header clean-header"><h2>บันทึกการติดตามจากอาจารย์</h2></div><div class="card-body followup-list" id="adminTrackingFollowups"></div></div></div>
+</section>
+
 <section class="row g-4 mt-1">
     <div class="col-xl-6">
         <div class="card">

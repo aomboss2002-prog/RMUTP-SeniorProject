@@ -1,5 +1,59 @@
 # RMUTP Senior Project Management System
 
+## AI บน Vercel โดยไม่ต้องเปิด BAT ค้าง
+
+ระบบ Production จะตรวจชื่อโครงงานทันทีเมื่อบันทึก โดย Vercel ใช้ `local-ngram-v1` ซึ่งไม่ต้องใช้ API Token และไม่พยายามเชื่อมต่อ Ollama ที่อยู่ในเครื่องผู้พัฒนา ส่วน Risk Score จะคำนวณใหม่เมื่อเปิดข้อมูลที่คะแนนเก่า และมี Vercel Cron ประมวลผลงานที่เหลือวันละครั้ง
+
+เพิ่ม Environment Variables ต่อไปนี้ใน Vercel Production โดยกำหนด `CRON_SECRET` เป็นชนิด Secret:
+
+```env
+CRON_SECRET=a-random-secret-with-at-least-16-characters
+AI_WEB_PROCESSING_ENABLED=true
+```
+
+Deploy ใหม่ด้วย `wed.bat` แล้ว Vercel จะสร้างตารางเวลาสำหรับ `/api/ai-web-worker.php` อัตโนมัติ ส่วน localhost ยังใช้ `ai-worker.bat` ร่วมกับ Ollama `bge-m3` ได้เหมือนเดิม
+
+## การล้างฐานข้อมูลและไฟล์อัปโหลด
+
+> คำสั่งในหัวข้อนี้ลบข้อมูลถาวร ควรสำรองฐานข้อมูลและโฟลเดอร์ `uploads` ก่อนทุกครั้ง
+
+สำรอง MySQL ในเครื่องไปยังโฟลเดอร์ Downloads:
+
+```powershell
+C:\xampp\mysql\bin\mysqldump.exe -u root --databases rmutp_senior_project --result-file="$env:USERPROFILE\Downloads\RMUTP-database-backup.sql"
+```
+
+หากบัญชี MySQL มีรหัสผ่าน ให้เพิ่ม `-p` แล้วกรอกรหัสผ่านเมื่อระบบถาม ห้ามเขียนรหัสผ่านจริงลง README หรือ Commit ลง Git
+
+ล้างข้อมูลใช้งานทั้งหมด แต่คง Schema, migrations, การตั้งค่าระบบ และบัญชี Admin จาก `.env`:
+
+```powershell
+C:\xampp\php\php.exe scripts\clear-database.php --yes
+```
+
+ข้อมูลที่ถูกล้างประกอบด้วยนักศึกษา อาจารย์ โครงงาน กลุ่ม เอกสาร การอนุมัติ ข้อความ การแจ้งเตือน Session, Password Reset Token, AI Title Check และ Risk Score
+
+ตรวจหาไฟล์ใน `uploads` ที่ไม่มีข้อมูลในฐานข้อมูลอ้างอิง โดยยังไม่ลบ:
+
+```powershell
+C:\xampp\php\php.exe scripts\cleanup-unused-uploads.php
+```
+
+หากตรวจรายการแล้วว่าลบได้ ให้สำรอง `uploads` เป็น ZIP ก่อน จากนั้นจึงลบจริง:
+
+```powershell
+Compress-Archive -LiteralPath .\uploads -DestinationPath "$env:USERPROFILE\Downloads\RMUTP-uploads-backup.zip" -CompressionLevel Optimal
+C:\xampp\php\php.exe scripts\cleanup-unused-uploads.php --delete
+```
+
+เครื่องมือจะลบเฉพาะไฟล์ใน `uploads/proposal`, `uploads/draft`, `uploads/complete` และ `uploads/student` ที่ไม่มี Record อ้างอิง โดยจะไม่ลบ `.htaccess`, `.gitkeep` หรือไฟล์ส่วนอื่นของโปรเจกต์
+
+ตรวจระบบหลังล้างข้อมูล:
+
+```powershell
+.\build.bat --check --no-pause
+```
+
 ระบบจัดการโครงงานนักศึกษา RMUTP สำหรับผู้ดูแลระบบ อาจารย์ และนักศึกษา ครอบคลุมตั้งแต่การสร้างโครงงาน การจัดกลุ่ม การเชิญคณะกรรมการ การส่งและพิจารณาเอกสาร ไปจนถึงการเผยแพร่ฉบับสมบูรณ์
 
 ## ความสามารถหลัก
@@ -653,3 +707,50 @@ SMTP_PASSWORD=Google-App-Password-16-ตัวอักษร
 กำหนด `SMTP_PASSWORD` เป็นชนิด **Secret** และห้ามใช้รหัสผ่าน Gmail ปกติ ระบบจะส่งไปยังอีเมลของนักศึกษาและอาจารย์จากฐานข้อมูลโดยอัตโนมัติ ส่วน `ADMIN_RECOVERY_EMAIL` ใช้เฉพาะปลายทางกู้คืนของบัญชี Admin เท่านั้น
 
 `APP_URL` ต้องตรงกับ URL จริงเพื่อให้ลิงก์ในอีเมลกลับมายังระบบถูกต้อง ห้าม Commit `RESEND_API_KEY`, `SMTP_PASSWORD` หรือ Secret อื่นลง Git หากต้องการให้ Admin รีเซ็ตรหัสผ่านทางอีเมล ให้กำหนด `ADMIN_RECOVERY_EMAIL` เป็นอีเมลปลายทาง โดยยังใช้ `ADMIN_EMAIL` เป็นชื่อบัญชีสำหรับเข้าสู่ระบบเหมือนเดิม
+## หน้า Admin System Health
+
+ผู้ดูแลระบบเปิดหน้า `admin/system-health/index.php` เพื่อตรวจสอบ Database, Storage, Email, AI และ Scheduled worker ในมุมมองเดียว หน้าเว็บแสดงเฉพาะสถานะ, latency, driver, transport และชื่อผู้ส่งแบบปกปิด โดยไม่แสดง Host, Username, Password, API Key, Blob Token หรือ Cron Secret
+
+- ปุ่ม **รีเฟรช** เป็นการอ่านสถานะเท่านั้น ไม่สร้างไฟล์และไม่ส่งอีเมล
+- ปุ่ม **ทดสอบ Storage** จะสร้างไฟล์ probe ขนาดเล็ก ตรวจสอบ และลบทันที (รองรับ local storage)
+- ปุ่ม **ส่งอีเมลทดสอบ** จะขอคำยืนยันก่อนส่งข้อความทั่วไปไปยัง `ADMIN_RECOVERY_EMAIL`
+- Scheduled worker ทำงานทุกวัน `02:00 UTC` หรือประมาณ `09:00 น.` ประเทศไทย และบันทึกเฉพาะสถานะ ระยะเวลา สรุปจำนวนงาน และ error code ที่ปลอดภัย
+
+หากฐานข้อมูลเดิมยังไม่มีตารางประวัติ worker ให้นำเข้า migration ต่อไปนี้หนึ่งครั้ง:
+
+```powershell
+cmd /c "C:\xampp\mysql\bin\mysql.exe -u root rmutp_senior_project < database\system-job-runs.sql"
+```
+
+ตรวจหน้าและ API หลังเข้าสู่ระบบ Admin:
+
+```text
+http://localhost/RMUTP-SeniorProject/admin/system-health/index.php
+http://localhost/RMUTP-SeniorProject/api/index.php?resource=system-health
+```
+
+## การติดตามความก้าวหน้าโครงงาน (Project Pulse)
+
+ระบบคำนวณความก้าวหน้าจากเอกสารจริงโดยอัตโนมัติและไม่เปิดให้แก้เปอร์เซ็นต์เอง ลำดับคือ Proposal `0 → 15 → 30`, Draft บทที่ 1–5 เพิ่มบทละ `8%`, Complete `70 → 85 → 100` ทุกการส่ง ส่งแก้ อนุมัติ ส่งกลับแก้ไข ปฏิเสธ และลบเอกสารจะถูกบันทึกใน `project_progress_history` ด้วย `event_key` ที่ป้องกันเหตุการณ์ซ้ำจากการ Retry
+
+Project Pulse แสดง 7 ขั้นตอน ได้แก่ Proposal, Draft บทที่ 1–5 และ Complete พร้อมขั้นตอนปัจจุบัน ผู้ที่ต้องดำเนินการต่อ กิจกรรมล่าสุด จำนวนวันที่ไม่มีความเคลื่อนไหว และกราฟแนวโน้ม อาจารย์ที่ได้รับมอบหมายเท่านั้นที่เพิ่ม/แก้ไข/ลบบันทึกติดตามได้ นักศึกษาอ่านบันทึกของโครงงานตนเองได้ และ Admin อ่านเพื่อตรวจสอบได้
+
+ฐานข้อมูลใหม่ติดตั้งด้วย:
+
+```powershell
+cmd /c "C:\xampp\mysql\bin\mysql.exe -u root rmutp_senior_project < database\project-tracking.sql"
+```
+
+ฐานข้อมูลเดิมอาจยังไม่มีประวัติ ให้ตรวจรายการที่สามารถสร้างย้อนหลังได้โดยไม่เปลี่ยนข้อมูลก่อน:
+
+```powershell
+C:\xampp\php\php.exe scripts\backfill-project-tracking.php
+```
+
+ยืนยันบันทึกด้วย `--apply`:
+
+```powershell
+C:\xampp\php\php.exe scripts\backfill-project-tracking.php --apply
+```
+
+Backfill สร้างเฉพาะเหตุการณ์ที่พิสูจน์ได้จาก `uploaded_at`, `approved_at` และสถานะปัจจุบัน ไม่สร้างประวัติการส่งแก้ไขที่สูญหายขึ้นเอง ตารางใหม่ทั้งสองรายการจะถูกล้างด้วย `scripts/clear-database.php --yes` เช่นเดียวกับข้อมูล Workflow อื่น

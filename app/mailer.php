@@ -156,6 +156,49 @@ function send_email_via_smtp(
 }
 
 /** @return array{id:string,transport:string} */
+function send_system_email(string $recipient, string $subject, string $html, string $text, string $idempotencyKey): array
+{
+    $config = mailer_config();
+    $transport = mailer_transport();
+    if (!filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
+        throw new RuntimeException('The recipient email address is invalid.');
+    }
+    if ($transport === 'log') {
+        $messageId = 'local-' . bin2hex(random_bytes(8));
+        $line = sprintf("[%s] %s TO=%s SUBJECT=%s%s", date(DATE_ATOM), $messageId, $recipient, $subject, PHP_EOL);
+        if (file_put_contents(sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'rmutp-system-mail.log', $line, FILE_APPEND | LOCK_EX) === false) {
+            throw new RuntimeException('Unable to write the local mail log.');
+        }
+        return ['id' => $messageId, 'transport' => 'log'];
+    }
+    if ($transport === 'smtp') {
+        return send_email_via_smtp($config, $recipient, $subject, $html, $text);
+    }
+    if ($transport !== 'resend') {
+        throw new RuntimeException('Unsupported mail transport.');
+    }
+    $apiKey = trim((string) ($config['RESEND_API_KEY'] ?? ''));
+    $from = trim((string) ($config['MAIL_FROM'] ?? ''));
+    if ($apiKey === '' || $from === '' || !function_exists('curl_init')) {
+        throw new RuntimeException('Email provider is not configured.');
+    }
+    $payload = json_encode(['from' => $from, 'to' => [$recipient], 'subject' => $subject, 'html' => $html, 'text' => $text], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+    $handle = curl_init('https://api.resend.com/emails');
+    if ($handle === false) throw new RuntimeException('Unable to initialize email delivery.');
+    curl_setopt_array($handle, [
+        CURLOPT_POST => true, CURLOPT_POSTFIELDS => $payload, CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CONNECTTIMEOUT => 10, CURLOPT_TIMEOUT => 30,
+        CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $apiKey, 'Content-Type: application/json', 'User-Agent: RMUTP-SeniorProject/1.0', 'Idempotency-Key: ' . substr(hash('sha256', $idempotencyKey), 0, 64)],
+    ]);
+    $response = curl_exec($handle);
+    $status = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
+    unset($handle);
+    if ($response === false || $status < 200 || $status >= 300) throw new RuntimeException('Email provider rejected the test message.');
+    $decoded = json_decode((string) $response, true);
+    return ['id' => (string) (($decoded['id'] ?? '') ?: 'accepted'), 'transport' => 'resend'];
+}
+
+/** @return array{id:string,transport:string} */
 function send_password_reset_email(string $recipient, string $name, string $resetUrl, int $expiresMinutes = 15): array
 {
     $config = mailer_config();

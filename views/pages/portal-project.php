@@ -8,6 +8,7 @@
                     <div class="detail-grid" id="studentProjectInfo"></div>
                     <div class="form-actions mt-3" id="studentProjectEditActions"><button class="btn btn-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> บันทึกข้อมูลโครงงาน</button></div>
                 </form>
+                <div id="studentProjectTitleCheck" class="mt-3 d-none" role="status" aria-live="polite"></div>
                 <p id="studentProjectReadOnlyNote" class="alert alert-info mt-3 mb-0 d-none">เฉพาะหัวหน้ากลุ่มเท่านั้นที่แก้ไขข้อมูลโครงงานได้</p>
             </div>
         </div>
@@ -20,6 +21,10 @@
             </div>
         </div>
     </div>
+</section>
+<section class="card mt-4 tracking-panel" aria-labelledby="studentProjectPulseTitle">
+    <div class="card-header clean-header"><div><h2 id="studentProjectPulseTitle">Project Pulse</h2><small class="text-muted">ติดตาม Proposal ถึงฉบับสมบูรณ์แบบอัตโนมัติ</small></div><strong id="studentTrackingProgress">0%</strong></div>
+    <div class="card-body"><div class="tracking-action-callout" id="studentTrackingSummary" role="status" aria-live="polite"></div><ol class="milestone-rail mt-4" id="studentMilestones" aria-label="ลำดับความก้าวหน้าโครงงาน"></ol></div>
 </section>
 <section class="card mt-4" id="studentGroupCard">
     <div class="card-header clean-header">

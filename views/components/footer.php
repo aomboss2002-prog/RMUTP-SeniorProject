@@ -29,8 +29,14 @@ $isAdminPage = !$isPortalPage && !$isAdvisorPage
 <?php endif; ?>
 <script defer src="<?= e(versioned_asset_url('vendor/sweetalert2/sweetalert2.all.min.js')) ?>"></script>
 <script defer src="<?= e(versioned_asset_url('js/app.js')) ?>"></script>
+<?php if (in_array($currentPage, ['portal-dashboard', 'portal-project', 'portal-timeline', 'advisor-student-detail', 'student-detail'], true)): ?>
+<script defer src="<?= e(versioned_asset_url('js/project-tracking.js')) ?>"></script>
+<?php endif; ?>
 <?php if ($currentPage === 'dashboard'): ?>
 <script defer src="<?= e(versioned_asset_url('js/dashboard.js')) ?>"></script>
+<?php endif; ?>
+<?php if ($currentPage === 'system-health'): ?>
+<script defer src="<?= e(versioned_asset_url('js/system-health.js')) ?>"></script>
 <?php endif; ?>
 <?php if ($isAdminPage && page_uses_admin_module($currentPage)): ?>
 <script defer src="<?= e(versioned_asset_url('js/student.js')) ?>"></script>

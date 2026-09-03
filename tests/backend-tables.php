@@ -9,6 +9,8 @@ $requiredTables = [
     'user_sessions' => ['PRIMARY', 'idx_user_sessions_user', 'idx_user_sessions_expires'],
     'password_reset_tokens' => ['PRIMARY', 'token_hash', 'idx_password_reset_user', 'idx_password_reset_expires', 'idx_password_reset_ip_created'],
     'notification_reads' => ['PRIMARY', 'idx_notification_reads_reader'],
+    'project_progress_history' => ['PRIMARY', 'uq_project_progress_event_key', 'idx_project_progress_time', 'idx_document_progress_time'],
+    'advisor_followups' => ['PRIMARY', 'idx_advisor_followups_project_time', 'idx_advisor_followups_advisor', 'idx_advisor_followups_date'],
 ];
 
 $tableStatement = $pdo->prepare(
@@ -45,6 +47,12 @@ $foreignKeyStatement = $pdo->query(
 if ((int) $foreignKeyStatement->fetchColumn() !== 1) {
     $errors[] = 'Missing foreign key: notification_reads.notification_id -> notifications.id';
 }
+$trackingForeignKeys = $pdo->query(
+    "SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ('project_progress_history','advisor_followups')
+       AND REFERENCED_TABLE_NAME IS NOT NULL"
+)->fetchColumn();
+if ((int) $trackingForeignKeys < 4) $errors[] = 'Missing project tracking foreign keys';
 
 if ($errors !== []) {
     fwrite(STDERR, implode(PHP_EOL, $errors) . PHP_EOL);

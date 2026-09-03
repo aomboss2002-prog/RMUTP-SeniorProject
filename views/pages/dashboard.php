@@ -35,6 +35,43 @@
 </section>
 
 <section class="row g-4 mt-1">
+    <div class="col-12">
+        <div class="card dashboard-card risk-overview-card" id="riskOverviewCard" aria-busy="true">
+            <div class="card-header clean-header risk-overview-header">
+                <div>
+                    <h2>ภาพรวมความเสี่ยงโครงงานด้วย AI</h2>
+                    <p>ประเมินแนวโน้มงานล่าช้าจากความคืบหน้าและกิจกรรมล่าสุด โดยไม่ใช้วันกำหนดส่ง</p>
+                </div>
+                <div class="risk-overview-meta">
+                    <span><strong id="riskCalculatedTotal">—</strong> โครงงานที่ประเมินแล้ว</span>
+                    <small id="riskLatestCalculated">กำลังโหลดข้อมูล...</small>
+                </div>
+            </div>
+            <div class="card-body risk-overview-body">
+                <div class="risk-chart-panel chart-box">
+                    <canvas id="riskDistributionChart" role="img" aria-label="กราฟแสดงจำนวนโครงงานแยกตามระดับความเสี่ยง Low, Watch, High และ Critical">
+                        จำนวนโครงงานแยกตามระดับความเสี่ยง
+                    </canvas>
+                </div>
+                <div class="risk-decision-panel" aria-label="จำนวนโครงงานแต่ละระดับความเสี่ยง">
+                    <div class="risk-attention-summary">
+                        <span>ควรติดตามใกล้ชิด</span>
+                        <strong id="riskNeedsAttention">—</strong>
+                        <small>โครงงานระดับ High และ Critical</small>
+                    </div>
+                    <div class="risk-level-grid">
+                        <div class="risk-level-item risk-low"><span><i aria-hidden="true"></i>Low</span><strong data-risk-count="low">—</strong><small>ความเสี่ยงต่ำ</small></div>
+                        <div class="risk-level-item risk-watch"><span><i aria-hidden="true"></i>Watch</span><strong data-risk-count="watch">—</strong><small>เฝ้าระวัง</small></div>
+                        <div class="risk-level-item risk-high"><span><i aria-hidden="true"></i>High</span><strong data-risk-count="high">—</strong><small>ความเสี่ยงสูง</small></div>
+                        <div class="risk-level-item risk-critical"><span><i aria-hidden="true"></i>Critical</span><strong data-risk-count="critical">—</strong><small>เร่งดำเนินการ</small></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="row g-4 mt-1">
     <div class="col-xl-4">
         <div class="card dashboard-card">
             <div class="card-header clean-header"><h2>กิจกรรมล่าสุด</h2></div>

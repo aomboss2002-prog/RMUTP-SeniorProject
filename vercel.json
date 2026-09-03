@@ -1,5 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/ai-web-worker.php",
+      "schedule": "0 2 * * *"
+    }
+  ],
   "functions": {
     "api/vercel.php": {
       "runtime": "vercel-php@0.9.0",

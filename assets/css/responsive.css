@@ -1,4 +1,9 @@
 @media (max-width: 1199.98px) {
+    body[data-page="import-excel"] .import-upload-column,
+    body[data-page="import-excel"] .import-preview-column {
+        width: 100%;
+    }
+
     .summary-grid,
     .export-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -40,7 +45,28 @@
     }
 }
 
+@media (max-width: 991.98px) {
+    .risk-overview-body {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .risk-chart-panel {
+        min-height: 230px;
+        border-right: 0;
+        border-bottom: 1px solid var(--rmutp-border);
+        padding: 0 0 22px;
+    }
+
+    .risk-decision-panel {
+        grid-template-columns: minmax(150px, .55fr) minmax(320px, 1.45fr);
+    }
+}
+
 @media (max-width: 767.98px) {
+    body[data-page="import-excel"] .page-heading h1 {
+        font-size: clamp(1.25rem, 5.2vw, 1.7rem);
+    }
+
     .datatable td:last-child:has(.row-actions.document-actions) { min-width: 142px; }
 
     .top-navbar {
@@ -143,4 +169,82 @@
         align-items: stretch;
         flex-direction: column;
     }
+}
+@media (max-width: 1199.98px) {
+    .risk-overview-body {
+        grid-template-columns: minmax(240px, .8fr) minmax(360px, 1.2fr);
+        gap: 20px;
+    }
+
+    .risk-decision-panel {
+        grid-template-columns: 1fr;
+    }
+
+    .risk-attention-summary {
+        min-height: auto;
+    }
+}
+
+@media (max-width: 767.98px) {
+    .risk-overview-header,
+    .risk-overview-meta {
+        align-items: flex-start;
+    }
+
+    .risk-overview-meta {
+        min-width: 0;
+    }
+
+    .risk-overview-body {
+        grid-template-columns: minmax(0, 1fr);
+        padding: 18px;
+    }
+
+    .risk-chart-panel {
+        min-height: 220px;
+        border-right: 0;
+        border-bottom: 1px solid var(--rmutp-border);
+        padding: 0 0 20px;
+    }
+
+    .risk-level-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .risk-decision-panel {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+@media (max-width: 1199.98px) {
+    .health-summary { grid-template-columns:repeat(3,minmax(0,1fr)); }
+    .health-layout { grid-template-columns:1fr; }
+    .health-side-stack { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 767.98px) {
+    .health-readiness { grid-template-columns:1fr; padding:1rem; }
+    .health-rail { grid-template-columns:repeat(5,minmax(64px,1fr)); overflow-x:auto; padding-bottom:.25rem; }
+    .health-summary { grid-template-columns:1fr 1fr; }
+    .health-summary-card { min-height:132px; }
+    .health-detail-list article { grid-template-columns:42px minmax(0,1fr); }
+    .health-detail-list article dl { grid-column:1/-1; }
+    .health-actions { align-items:stretch; flex-wrap:wrap; }.health-actions>div { flex:1 0 100%; }.health-actions .btn { flex:1 1 180px; }
+    .health-side-stack { grid-template-columns:1fr; }
+}
+@media (max-width: 420px) {
+    .health-toolbar { align-items:flex-start; }.health-toolbar .btn span { display:none; }
+    .health-summary { grid-template-columns:1fr; }
+    .health-panel>header { display:block; }.health-panel>header p { margin-top:.45rem; text-align:left; }
+    .health-rail { grid-template-columns:repeat(5,minmax(0,1fr)); overflow:visible; }.health-rail::before { left:10%; right:10%; }.health-rail li>span { width:32px; height:32px; }.health-rail strong { font-size:.62rem; }.health-rail small { font-size:.53rem; white-space:normal; line-height:1.25; }
+    .health-queue { grid-template-columns:1fr 1fr; }.health-queue div:nth-child(3) { border-left:0; border-top:1px solid var(--rmutp-border); }.health-queue div:nth-child(4) { border-top:1px solid var(--rmutp-border); }
+}
+@media (max-width: 767.98px) {
+    .tracking-action-callout { grid-template-columns: 1fr; }
+    .milestone-rail { display: block; padding-left: .35rem; }
+    .milestone-rail::before { top: 1.1rem; bottom: 1.1rem; left: 1.45rem; right: auto; width: 2px; height: auto; }
+    .milestone-item { display: grid; grid-template-columns: 2.25rem minmax(0,1fr); column-gap: .85rem; min-height: 4.2rem; text-align: left; }
+    .milestone-node { grid-row: 1 / span 2; margin: 0; }
+    .milestone-label { align-self: end; font-size: .86rem; overflow-wrap: normal; }
+    .milestone-status { align-self: start; }
+    .tracking-chart-wrap { height: 210px; padding: .35rem; }
+    .followup-form-actions, .followup-form-actions .btn { width: 100%; }
 }

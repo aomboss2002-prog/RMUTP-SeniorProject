@@ -8,7 +8,11 @@
         <div class="card profile-card student-mini-profile">
             <img id="portalStudentPhoto" src="<?= e(asset_url('img/profile-student.svg')) ?>" alt="รูปนักศึกษา">
             <h2 id="portalStudentName">นักศึกษา</h2>
-            <p id="portalStudentMeta" class="text-muted mb-0"></p>
+            <div id="portalStudentMeta" class="portal-student-meta text-muted">
+                <span class="portal-student-code"></span>
+                <span class="portal-student-major"></span>
+                <span class="portal-student-qualification d-none"></span>
+            </div>
         </div>
     </div>
     <div class="col-xl-8">

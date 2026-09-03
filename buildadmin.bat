@@ -78,7 +78,7 @@ for %%D in ("admin" "api\admin" "app" "assets\css" "assets\js" "controllers" "ro
         set "STRUCTURE_OK=0"
     )
 )
-for %%F in ("login.php" "admin\dashboard.php" "admin\page.php" "api\admin\index.php" "api\index.php" "app\helpers.php" "app\session.php" "app\store.php" "controllers\PageController.php" "routes\web.php" "views\layout.php" "views\components\sidebar.php" "views\components\navbar.php" "assets\css\theme.css" "assets\css\style.css" "assets\css\responsive.css" "assets\js\app.js" "assets\js\dashboard.js" "assets\js\student.js" "assets\js\notification.js") do (
+for %%F in ("login.php" "admin\dashboard.php" "admin\page.php" "admin\system-health\index.php" "api\admin\index.php" "api\index.php" "app\helpers.php" "app\session.php" "app\store.php" "app\system-health.php" "controllers\PageController.php" "routes\web.php" "views\layout.php" "views\components\sidebar.php" "views\components\navbar.php" "assets\css\theme.css" "assets\css\style.css" "assets\css\responsive.css" "assets\js\app.js" "assets\js\dashboard.js" "assets\js\student.js" "assets\js\notification.js" "assets\js\system-health.js") do (
     if not exist "%%~F" (
         echo [MISSING] %%~F
         set "STRUCTURE_OK=0"
@@ -122,7 +122,7 @@ if errorlevel 1 (
     echo [WARNING] Node.js was not found. JavaScript syntax check skipped.
     exit /b 0
 )
-for %%F in ("assets\js\app.js" "assets\js\dashboard.js" "assets\js\student.js" "assets\js\notification.js") do (
+for %%F in ("assets\js\app.js" "assets\js\dashboard.js" "assets\js\student.js" "assets\js\notification.js" "assets\js\system-health.js") do (
     node --check "%%~F"
     if errorlevel 1 (
         echo [ERROR] JavaScript syntax failed: %%~F

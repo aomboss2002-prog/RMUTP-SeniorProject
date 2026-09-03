@@ -17,7 +17,7 @@ foreach ($path in $publicPages) {
 
 $adminPages = @(
     '/admin/dashboard.php', '/admin/students/index.php', '/admin/students/add.php',
-    '/admin/advisors/index.php', '/admin/page.php?view=projects',
+    '/admin/advisors/index.php', '/admin/page.php?view=projects', '/admin/system-health/index.php',
     '/admin/page.php?view=documents', '/admin/reports/index.php', '/admin/settings/index.php'
 )
 $studentPages = @(
@@ -37,6 +37,12 @@ foreach ($path in ($adminPages + $studentPages + $advisorPages)) {
         throw "$path did not redirect to a login page"
     }
     Assert-HealthyResponse $response $path
+}
+try {
+    Invoke-WebRequest -Uri ($base + '/api/index.php?resource=system-health') -UseBasicParsing | Out-Null
+    throw 'Unauthenticated System Health API was not protected'
+} catch {
+    if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -ne 403) { throw }
 }
 
 try {
@@ -79,6 +85,15 @@ foreach ($path in $adminPages) {
 foreach ($resource in @('dashboard', 'students', 'advisors', 'projects', 'documents', 'notifications', 'settings')) {
     $response = Invoke-RestMethod -Uri ($base + "/api/index.php?resource=$resource") -WebSession $session
     if (-not $response.success) { throw "Admin API failed: $resource" }
+}
+$healthResponse = Invoke-RestMethod -Uri ($base + '/api/index.php?resource=system-health') -WebSession $session
+if (-not $healthResponse.success -or -not $healthResponse.data.services.database -or -not $healthResponse.data.services.storage) {
+    throw 'Admin System Health API returned an incomplete payload'
+}
+$healthJson = $healthResponse | ConvertTo-Json -Depth 10
+foreach ($secretKey in @('DB_PASS', 'SMTP_PASSWORD', 'RESEND_API_KEY', 'BLOB_READ_WRITE_TOKEN', 'CRON_SECRET')) {
+    $secretValue = [string]$envValues[$secretKey]
+    if ($secretValue.Length -ge 4 -and $healthJson.Contains($secretValue)) { throw "System Health leaked $secretKey" }
 }
 
 Write-Output 'HTTP_SMOKE_OK'

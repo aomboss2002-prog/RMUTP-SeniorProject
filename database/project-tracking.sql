@@ -1,0 +1,41 @@
+CREATE TABLE IF NOT EXISTS project_progress_history (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    project_id VARCHAR(20) NOT NULL,
+    document_id VARCHAR(20) NULL,
+    event_type VARCHAR(40) NOT NULL,
+    stage VARCHAR(30) NOT NULL,
+    chapter TINYINT UNSIGNED NULL,
+    previous_progress TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    current_progress TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    actor_type VARCHAR(20) NOT NULL DEFAULT 'system',
+    actor_id VARCHAR(40) NOT NULL DEFAULT 'system',
+    actor_name VARCHAR(180) NOT NULL DEFAULT 'System',
+    event_key CHAR(64) NOT NULL,
+    metadata_json JSON NULL,
+    occurred_at DATETIME NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_project_progress_event_key (event_key),
+    INDEX idx_project_progress_time (project_id, occurred_at, id),
+    INDEX idx_document_progress_time (document_id, occurred_at, id),
+    CONSTRAINT fk_progress_history_project FOREIGN KEY (project_id) REFERENCES projects(id) ON UPDATE CASCADE ON DELETE CASCADE,
+    CONSTRAINT fk_progress_history_document FOREIGN KEY (document_id) REFERENCES documents(id) ON UPDATE CASCADE ON DELETE SET NULL,
+    CONSTRAINT chk_progress_history_previous CHECK (previous_progress BETWEEN 0 AND 100),
+    CONSTRAINT chk_progress_history_current CHECK (current_progress BETWEEN 0 AND 100)
+);
+
+CREATE TABLE IF NOT EXISTS advisor_followups (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    project_id VARCHAR(20) NOT NULL,
+    advisor_id VARCHAR(20) NULL,
+    note VARCHAR(1000) NOT NULL,
+    issue VARCHAR(1000) NOT NULL DEFAULT '',
+    next_action VARCHAR(1000) NOT NULL DEFAULT '',
+    followup_at DATE NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_advisor_followups_project_time (project_id, created_at, id),
+    INDEX idx_advisor_followups_advisor (advisor_id, created_at),
+    INDEX idx_advisor_followups_date (followup_at),
+    CONSTRAINT fk_advisor_followups_project FOREIGN KEY (project_id) REFERENCES projects(id) ON UPDATE CASCADE ON DELETE CASCADE,
+    CONSTRAINT fk_advisor_followups_advisor FOREIGN KEY (advisor_id) REFERENCES advisors(id) ON UPDATE CASCADE ON DELETE SET NULL
+);
