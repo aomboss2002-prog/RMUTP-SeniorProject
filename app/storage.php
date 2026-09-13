@@ -9,7 +9,14 @@ function storage_config(): array
 function storage_driver(): string
 {
     $config = storage_config();
-    $driver = strtolower(trim((string) ($config['STORAGE_DRIVER'] ?? getenv('STORAGE_DRIVER') ?: 'local')));
+    $driver = strtolower(trim((string) ($config['STORAGE_DRIVER'] ?? getenv('STORAGE_DRIVER') ?: '')));
+    if (trim((string) getenv('VERCEL')) !== '') {
+        $blobToken = trim((string) ($config['BLOB_READ_WRITE_TOKEN'] ?? getenv('BLOB_READ_WRITE_TOKEN') ?: ''));
+        if (str_starts_with($blobToken, 'vercel_blob_rw_')) {
+            $driver = 'vercel_blob';
+        }
+    }
+    if ($driver === '') $driver = 'local';
     return in_array($driver, ['vercel_blob', 'blob'], true) ? 'vercel_blob' : 'local';
 }
 
