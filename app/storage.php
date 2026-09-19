@@ -188,15 +188,17 @@ function storage_materialize(string $namespace, string $filename): array
     }
     $stream = fopen($temporary, 'wb');
     if ($stream === false) throw new RuntimeException('Unable to open a temporary download file.');
+    // CURLOPT_FILE must remain the response sink. Setting RETURNTRANSFER after
+    // it redirects Blob bytes to PHP output instead of this temporary file.
     $handle = storage_curl(storage_blob_url($namespace, $filename), [
         CURLOPT_FILE => $stream,
-        CURLOPT_RETURNTRANSFER => false,
     ]);
     $result = curl_exec($handle);
     $status = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
     unset($handle);
     fclose($stream);
-    if ($result === false || $status < 200 || $status >= 300) {
+    clearstatcache(true, $temporary);
+    if ($result === false || $status < 200 || $status >= 300 || filesize($temporary) === 0) {
         @unlink($temporary);
         throw new RuntimeException("Unable to download the stored Blob (HTTP {$status}).");
     }

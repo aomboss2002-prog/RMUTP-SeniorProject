@@ -5,7 +5,7 @@
     <div class="archive-masthead__inner">
         <div class="archive-brand">
             <span class="archive-brand__mark">
-                <img src="<?= e(asset_url('img/rmutp-logo.png')) ?>" alt="ตราสัญลักษณ์มหาวิทยาลัยเทคโนโลยีราชมงคลพระนคร">
+                <img decoding="async" width="105" height="192" src="<?= e(versioned_asset_url('img/rmutp-logo-web.png')) ?>" alt="ตราสัญลักษณ์มหาวิทยาลัยเทคโนโลยีราชมงคลพระนคร">
             </span>
             <div>
                 <p class="archive-brand__eyebrow">RMUTP DIGITAL ARCHIVE</p>
@@ -177,7 +177,7 @@
 
 <footer class="public-footer">
     <div>
-        <img src="<?= e(asset_url('img/rmutp-logo.png')) ?>" alt="" aria-hidden="true">
+        <img decoding="async" width="105" height="192" src="<?= e(versioned_asset_url('img/rmutp-logo-web.png')) ?>" alt="" aria-hidden="true">
         <span>มหาวิทยาลัยเทคโนโลยีราชมงคลพระนคร</span>
     </div>
     <p>คลังโครงงานฉบับสมบูรณ์ • เพื่อการศึกษาและการอ้างอิง</p>

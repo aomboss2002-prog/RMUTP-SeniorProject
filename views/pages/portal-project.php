@@ -1,4 +1,10 @@
 <?php page_header('โครงงานของฉัน', 'ดูข้อเสนอ ฉบับร่าง ฉบับสมบูรณ์ บาร์โค้ด ความคิดเห็น และรายละเอียดการอนุมัติ'); ?>
+<div id="studentProjectLoading" class="card p-4 mb-4" role="status" aria-live="polite">
+    <span id="studentProjectLoadingText">กำลังโหลดข้อมูลโครงงาน...</span>
+    <button id="studentProjectRetry" class="btn btn-outline-primary mt-3 align-self-start" type="button" hidden>ลองอีกครั้ง</button>
+</div>
+<noscript><p class="alert alert-warning">กรุณาเปิด JavaScript เพื่อดูข้อมูลโครงงาน</p></noscript>
+<div id="studentProjectContent" hidden>
 <section class="row g-4">
     <div class="col-xl-8">
         <div class="card">
@@ -94,3 +100,4 @@
         </table>
     </div>
 </section>
+</div>

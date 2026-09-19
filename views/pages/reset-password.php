@@ -7,7 +7,7 @@ require __DIR__ . '/../components/header.php';
 <main class="password-recovery-shell">
     <section class="password-recovery-card" aria-labelledby="resetPasswordHeading">
         <a class="password-recovery-brand" href="<?= e(route_url('login')) ?>">
-            <img src="<?= e(asset_url('img/rmutp-logo.png')) ?>" alt="RMUTP">
+            <img decoding="async" width="105" height="192" src="<?= e(versioned_asset_url('img/rmutp-logo-web.png')) ?>" alt="RMUTP">
             <span>RMUTP Senior Project</span>
         </a>
         <span class="password-recovery-icon"><i class="fa-solid fa-key" aria-hidden="true"></i></span>

@@ -44,9 +44,6 @@ $isAdminPage = !$isPortalPage && !$isAdvisorPage
 <?php if ($isAdminPage): ?>
 <script defer src="<?= e(versioned_asset_url('js/notification.js')) ?>"></script>
 <?php endif; ?>
-<?php if (page_uses_blob_upload($currentPage) && function_exists('storage_driver') && storage_driver() === 'vercel_blob'): ?>
-<script defer src="<?= e(versioned_asset_url('js/vercel-blob-upload.js')) ?>"></script>
-<?php endif; ?>
 <?php if ($isPortalPage): ?>
 <script defer src="<?= e(versioned_asset_url('js/portal.js')) ?>"></script>
 <?php elseif ($isAdvisorPage): ?>

@@ -11,6 +11,23 @@
     const studentMessagesPerPage = 5;
     const pendingGetRequests = new Map();
     let dashboardBootstrapConsumed = false;
+    let blobUploaderPromise = null;
+    let projectBootstrap = null;
+
+    function consumeProjectBootstrap(url) {
+        if (projectBootstrap === null) {
+            projectBootstrap = {};
+            const element = document.getElementById('studentProjectBootstrap');
+            if (element) {
+                try { projectBootstrap = JSON.parse(element.textContent || '{}') || {}; }
+                catch (_error) { /* Fall back to the authenticated API. */ }
+                element.remove();
+            }
+        }
+        const response = projectBootstrap[url];
+        delete projectBootstrap[url];
+        return response?.success === true ? response : null;
+    }
 
     function usesVercelBlob() {
         return $('meta[name="storage-driver"]').attr('content') === 'vercel_blob';
@@ -22,8 +39,36 @@
         return `${prefix}/${namespace}/${id}.${extension}`;
     }
 
+    function loadBlobUploader() {
+        if (typeof window.RmutpBlobUpload === 'function') return Promise.resolve();
+        if (!blobUploaderPromise) {
+            blobUploaderPromise = new Promise((resolve, reject) => {
+                const scriptUrl = $('meta[name="blob-upload-script"]').attr('content');
+                if (!scriptUrl) {
+                    reject(new Error('Cloud upload module is unavailable.'));
+                    return;
+                }
+                const script = document.createElement('script');
+                script.src = scriptUrl;
+                script.async = true;
+                script.onload = () => typeof window.RmutpBlobUpload === 'function'
+                    ? resolve()
+                    : reject(new Error('Cloud upload module is unavailable.'));
+                script.onerror = () => {
+                    script.remove();
+                    reject(new Error('Cloud upload module could not be loaded.'));
+                };
+                document.head.appendChild(script);
+            }).catch((error) => {
+                blobUploaderPromise = null;
+                throw error;
+            });
+        }
+        return blobUploaderPromise;
+    }
+
     async function uploadToBlob(file, namespace, payload, onProgress) {
-        if (!window.RmutpBlobUpload) throw new Error('Cloud upload module is unavailable.');
+        await loadBlobUploader();
         const extension = (file.name.split('.').pop() || '').toLowerCase().replace(/[^a-z0-9]/g, '');
         return window.RmutpBlobUpload({ file, pathname: blobPath(namespace, extension), payload, onProgress });
     }
@@ -45,6 +90,10 @@
     }
 
     function request(url, options = {}) {
+        if ((options.method || 'GET').toUpperCase() === 'GET' && !options.data) {
+            const initialResponse = consumeProjectBootstrap(url);
+            if (initialResponse) return $.Deferred().resolve(initialResponse).promise();
+        }
         const ajaxOptions = Object.assign({
             url: App.url(url),
             method: options.method || 'GET',
@@ -491,8 +540,8 @@
     }
 
     function loadProjectPage() {
-        loadGroup();
-        loadProject(function (data) {
+        const groupRequest = loadGroup();
+        const projectRequest = loadProject(function (data) {
             const project = data.project;
             const canEditProject = !data.group || data.is_group_leader;
             renderProjectTitleCheck(data.title_check);
@@ -548,6 +597,15 @@
             }).join(''));
 
             renderProgressChart(data.progress);
+        });
+        $.when(groupRequest, projectRequest).done(function () {
+            $('#studentProjectLoading').prop('hidden', true);
+            $('#studentProjectContent').prop('hidden', false);
+            App.state.charts.studentProgressChart?.resize();
+        }).fail(function () {
+            $('#studentProjectLoading').prop('hidden', false);
+            $('#studentProjectLoadingText').text('โหลดข้อมูลไม่สำเร็จ กรุณาลองอีกครั้ง');
+            $('#studentProjectRetry').prop('hidden', false);
         });
     }
 
@@ -672,6 +730,7 @@
                 hideInlinePdfPreview();
                 return App.toast('เลือกได้เฉพาะไฟล์ PDF เท่านั้น', 'error');
             }
+            if (usesVercelBlob()) loadBlobUploader().catch(() => {});
             showInlinePdfPreview(URL.createObjectURL(file), file.name, true);
             $drop.find('strong').text(file.name);
             $drop.find('span').text(`${(file.size / 1024 / 1024).toFixed(2)} MB · พร้อมอัปโหลด`);
@@ -849,14 +908,6 @@
         $('#portalNotificationCounter').text(count || 0).toggle((count || 0) > 0);
     }
 
-    function loadNavbarProfile() {
-        request('api/student/profile/').done(function (response) {
-            const student = response.data.student || {};
-            const name = `${student.first_name || ''} ${student.last_name || ''}`.trim() || student.name || 'นักศึกษา';
-            $('.profile-chip #portalNavbarName').text(name);
-        });
-    }
-
     function loadDocuments() {
         loadProject(function (data) {
             const docs = [
@@ -940,6 +991,14 @@
     }
 
     function initForms() {
+        $('#studentProjectRetry').on('click', function () {
+            $(this).prop('hidden', true);
+            $('#studentProjectLoadingText').text('กำลังโหลดข้อมูลโครงงาน...');
+            loadProjectPage();
+        });
+        $('#spPhotoFile').on('change', function () {
+            if (usesVercelBlob() && this.files?.length) loadBlobUploader().catch(() => {});
+        });
         $('#studentProjectEditForm').on('submit', function (event) {
             event.preventDefault();
             request('api/student/project/', {
@@ -1126,7 +1185,6 @@
         const currentPage = page();
         if (!String(currentPage).startsWith('portal-')) return;
         initForms();
-        if (currentPage !== 'portal-dashboard') loadNavbarProfile();
         if (currentPage === 'portal-dashboard') loadDashboard();
         if (currentPage === 'portal-profile') loadProfile();
         if (currentPage === 'portal-project') loadProjectPage();
@@ -1138,16 +1196,18 @@
         if (currentPage === 'portal-messages') loadMessages();
         if (currentPage === 'portal-status') loadStatus();
 
-        if (currentPage !== 'portal-dashboard') {
+        if (currentPage !== 'portal-dashboard' && currentPage !== 'portal-notifications') {
             request('api/student/notifications/').done((response) => updateCounter(response.unread));
         }
+        // Unused initial data must not survive a later group/profile mutation.
+        projectBootstrap = {};
         setInterval(function () {
             if (document.visibilityState !== 'visible') return;
             if (currentPage === 'portal-dashboard') loadDashboard();
             if (currentPage === 'portal-notifications') loadNotifications();
             if (currentPage === 'portal-messages') loadMessages();
             if (currentPage === 'portal-status') loadStatus();
-            if (currentPage !== 'portal-dashboard') {
+            if (currentPage !== 'portal-dashboard' && currentPage !== 'portal-notifications') {
                 request('api/student/notifications/').done((response) => updateCounter(response.unread));
             }
         }, refreshMs);

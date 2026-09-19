@@ -1,6 +1,6 @@
 <aside class="sidebar portal-sidebar" id="sidebar">
     <a class="brand" href="<?= e(route_url('portal-dashboard')) ?>">
-        <img src="<?= e(asset_url('img/rmutp-logo.png')) ?>" alt="RMUTP Logo">
+        <img decoding="async" width="105" height="192" src="<?= e(versioned_asset_url('img/rmutp-logo-web.png')) ?>" alt="RMUTP Logo">
         <span>แถบเมนู</span>
     </a>
     <nav class="sidebar-nav">

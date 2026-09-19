@@ -95,13 +95,6 @@
         $('#advisorNotificationCounter').text(count || 0).toggle((count || 0) > 0);
     }
 
-    function loadNavbarProfile() {
-        request('profile').done(function (response) {
-            const data = response.data || {};
-            $('#advisorNavbarName').text(data.name || 'อาจารย์');
-        });
-    }
-
     function loadDashboard() {
         request('dashboard').done((response) => {
             const data = response.data;
@@ -411,8 +404,9 @@
         if (!String(current).startsWith('advisor-')) return;
         initForms();
         if (current === 'advisor-login') return;
-        loadNavbarProfile();
-        request('notifications').done((response) => updateCounter(response.unread));
+        if (current !== 'advisor-dashboard' && current !== 'advisor-notifications') {
+            request('notifications').done((response) => updateCounter(response.unread));
+        }
         if (current === 'advisor-dashboard') loadDashboard();
         if (current === 'advisor-students') { loadGroups(); loadStudents(); }
         if (current === 'advisor-student-detail') loadStudentDetail();
@@ -428,7 +422,9 @@
             if (current === 'advisor-messages') loadMessages();
             if (current === 'advisor-notifications') loadNotifications();
             if (current === 'advisor-students') { loadGroups(); loadStudents(); }
-            request('notifications').done((response) => updateCounter(response.unread));
+            if (current !== 'advisor-dashboard' && current !== 'advisor-notifications') {
+                request('notifications').done((response) => updateCounter(response.unread));
+            }
         }, refreshMs);
     });
 })(jQuery);

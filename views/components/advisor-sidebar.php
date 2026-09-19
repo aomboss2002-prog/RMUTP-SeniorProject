@@ -14,7 +14,7 @@ $menu = [
 ?>
 <aside class="sidebar" id="sidebar">
     <a class="brand" href="<?= e(route_url('advisor-dashboard')) ?>">
-        <img src="<?= e(asset_url('img/rmutp-logo.png')) ?>" alt="RMUTP">
+        <img decoding="async" width="105" height="192" src="<?= e(versioned_asset_url('img/rmutp-logo-web.png')) ?>" alt="RMUTP">
         <span>พอร์ทัลอาจารย์</span>
     </a>
     <nav class="sidebar-nav">

@@ -3,7 +3,7 @@
         <i class="fa-solid fa-bars"></i>
     </button>
     <div class="navbar-title">
-        <img src="<?= e(asset_url('img/rmutp-logo.png')) ?>" alt="RMUTP">
+        <img decoding="async" width="105" height="192" src="<?= e(versioned_asset_url('img/rmutp-logo-web.png')) ?>" alt="RMUTP">
         <div>
             <strong>อาจารย์</strong>
             <span><?= e($meta['title'] ?? 'แดชบอร์ดอาจารย์') ?></span>
@@ -15,7 +15,7 @@
             <span class="notification-counter" id="advisorNotificationCounter">0</span>
         </button>
         <a class="profile-chip" href="<?= e(route_url('advisor-profile')) ?>">
-            <span id="advisorNavbarName">อาจารย์</span>
+            <span id="advisorNavbarName"><?= e((string) ($_SESSION['advisor_user']['name'] ?? 'อาจารย์')) ?></span>
         </a>
         <a class="btn btn-outline-primary btn-sm" href="<?= e(route_url('advisor-logout')) ?>">
             <i class="fa-solid fa-right-from-bracket"></i>

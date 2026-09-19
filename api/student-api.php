@@ -336,11 +336,11 @@ function portal_timeline(array $context): array
     return $timeline;
 }
 
-function portal_project_payload(array $context): array
+function portal_project_payload(array $context, bool $includeTracking = true): array
 {
     $barcodeAvailable = barcode_is_available($context);
     $titleCheck = null;
-    if (!empty($context['project']['id'])) {
+    if ($includeTracking && !empty($context['project']['id'])) {
         try {
             $titleCheck = latest_project_title_check((string) $context['project']['id']);
         } catch (Throwable $error) {
@@ -348,7 +348,9 @@ function portal_project_payload(array $context): array
         }
     }
     $projectId = (string) ($context['project']['id'] ?? '');
-    $tracking = $projectId !== '' ? project_tracking_payload($projectId, $context['documents']) : derive_project_tracking([]);
+    $tracking = $includeTracking && $projectId !== ''
+        ? project_tracking_payload($projectId, $context['documents'], false, false)
+        : derive_project_tracking($context['documents']);
     // Students only need the current stage and milestones on the project page.
     // Detailed trend history and advisor follow-up notes remain available to
     // advisors/admins and are not included in this payload.
@@ -535,6 +537,63 @@ function save_student_upload(array &$data, array $context, string $stage): void
     student_respond(['success' => true, 'data' => $document, 'message' => 'File uploaded successfully.']);
 }
 
+function student_group_payload(array $data, array $context): array
+{
+    $group = $context['group'];
+    $receivedInvitations = [];
+    foreach ($data['group_invitations'] ?? [] as $invitation) {
+        if (($invitation['invited_student_id'] ?? '') === $context['studentId']
+            && ($invitation['status'] ?? '') === 'Pending') {
+            $invitedGroup = find_row($data['groups'] ?? [], (string) ($invitation['group_id'] ?? '')) ?? [];
+            $invitation['group_name'] = $invitedGroup['name'] ?? '-';
+            $receivedInvitations[] = $invitation;
+        }
+    }
+    return [
+        'group' => $group,
+        'members' => $group ? group_member_rows($data, $group) : [],
+        'is_leader' => $group && ($group['leader_id'] ?? '') === $context['studentId'],
+        'max_members' => 5,
+        'received_invitations' => $receivedInvitations,
+    ];
+}
+
+function student_profile_payload(array $data, array $context): array
+{
+    $availableAdvisors = array_values(array_map(static function (array $advisor): array {
+        unset($advisor['password_hash']);
+        return $advisor;
+    }, array_filter(
+        $data['advisors'] ?? [],
+        static fn(array $advisor): bool => ($advisor['status'] ?? 'Active') === 'Active'
+            && advisor_matches_student($advisor, $context['student'])
+    )));
+    $advisorRoles = $context['group']['advisor_roles'] ?? $context['student']['advisor_roles'] ?? [];
+    $advisorInvitationStatuses = [];
+    if ($context['group']) {
+        foreach ($data['advisor_invitations'] ?? [] as $invitation) {
+            if (($invitation['group_id'] ?? '') === ($context['group']['id'] ?? '')) {
+                $role = $invitation['role'] ?? '';
+                if (($advisorInvitationStatuses[$role] ?? '') === 'Accepted'
+                    && ($invitation['status'] ?? '') !== 'Accepted') {
+                    continue;
+                }
+                $advisorRoles[$role] = $invitation['advisor_id'] ?? '';
+                $advisorInvitationStatuses[$role] = $invitation['status'] ?? 'Pending';
+            }
+        }
+    }
+    return [
+        'student' => $context['student'],
+        'advisor' => $context['advisor'],
+        'advisors' => $availableAdvisors,
+        'advisor_roles' => $advisorRoles,
+        'advisor_invitation_statuses' => $advisorInvitationStatuses,
+        'group' => $context['group'],
+        'is_group_leader' => $context['group'] && ($context['group']['leader_id'] ?? '') === $context['studentId'],
+    ];
+}
+
 if ($studentApiLibraryOnly) {
     return;
 }
@@ -544,23 +603,7 @@ require_csrf_token();
 
 if ($endpoint === 'group') {
     if ($method === 'GET') {
-        $group = $context['group'];
-        $receivedInvitations = [];
-        foreach ($data['group_invitations'] ?? [] as $invitation) {
-            if (($invitation['invited_student_id'] ?? '') === $context['studentId']
-                && ($invitation['status'] ?? '') === 'Pending') {
-                $invitedGroup = find_row($data['groups'] ?? [], (string) ($invitation['group_id'] ?? '')) ?? [];
-                $invitation['group_name'] = $invitedGroup['name'] ?? '-';
-                $receivedInvitations[] = $invitation;
-            }
-        }
-        student_respond(['success' => true, 'data' => [
-            'group' => $group,
-            'members' => $group ? group_member_rows($data, $group) : [],
-            'is_leader' => $group && ($group['leader_id'] ?? '') === $context['studentId'],
-            'max_members' => 5,
-            'received_invitations' => $receivedInvitations,
-        ]]);
+        student_respond(['success' => true, 'data' => student_group_payload($data, $context)]);
     }
 
     if ($method === 'POST') {
@@ -806,38 +849,7 @@ if ($endpoint === 'group') {
 
 if ($endpoint === 'profile') {
     if ($method === 'GET') {
-        $availableAdvisors = array_values(array_map(static function (array $advisor): array {
-            unset($advisor['password_hash']);
-            return $advisor;
-        }, array_filter(
-            $data['advisors'] ?? [],
-            static fn(array $advisor): bool => ($advisor['status'] ?? 'Active') === 'Active'
-                && advisor_matches_student($advisor, $context['student'])
-        )));
-        $advisorRoles = $context['group']['advisor_roles'] ?? $context['student']['advisor_roles'] ?? [];
-        $advisorInvitationStatuses = [];
-        if ($context['group']) {
-            foreach ($data['advisor_invitations'] ?? [] as $invitation) {
-                if (($invitation['group_id'] ?? '') === ($context['group']['id'] ?? '')) {
-                    $role = $invitation['role'] ?? '';
-                    if (($advisorInvitationStatuses[$role] ?? '') === 'Accepted'
-                        && ($invitation['status'] ?? '') !== 'Accepted') {
-                        continue;
-                    }
-                    $advisorRoles[$role] = $invitation['advisor_id'] ?? '';
-                    $advisorInvitationStatuses[$role] = $invitation['status'] ?? 'Pending';
-                }
-            }
-        }
-        student_respond(['success' => true, 'data' => [
-            'student' => $context['student'],
-            'advisor' => $context['advisor'],
-            'advisors' => $availableAdvisors,
-            'advisor_roles' => $advisorRoles,
-            'advisor_invitation_statuses' => $advisorInvitationStatuses,
-            'group' => $context['group'],
-            'is_group_leader' => $context['group'] && ($context['group']['leader_id'] ?? '') === $context['studentId'],
-        ]]);
+        student_respond(['success' => true, 'data' => student_profile_payload($data, $context)]);
     }
     if ($method === 'PUT' || $method === 'POST') {
         $payload = student_payload();

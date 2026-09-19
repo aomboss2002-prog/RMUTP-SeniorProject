@@ -19,10 +19,18 @@
     ];
 
     function loadLookups() {
-        return $.when(App.api('advisors'), App.api('students'), App.api('projects')).done(function (advisorResponse, studentResponse, projectResponse) {
-            advisors = advisorResponse[0].data || [];
-            students = studentResponse[0].data || [];
-            projects = projectResponse[0].data || [];
+        const page = String($('body').data('page') || '');
+        const requests = [];
+        if (page === 'students' || $('#advisorInput').length) {
+            requests.push(App.api('advisors').done((response) => { advisors = response.data || []; }));
+        }
+        if (page === 'students' || $('#uploadStudent').length) {
+            requests.push(App.api('students').done((response) => { students = response.data || []; }));
+        }
+        if (page === 'documents' || $('#uploadProject, #projectInput, #barcodeProject, #timelineProject').length) {
+            requests.push(App.api('projects').done((response) => { projects = response.data || []; }));
+        }
+        return $.when.apply($, requests).done(function () {
             fillSelect('#advisorInput', advisors, 'id', 'name');
             fillSelect('#uploadStudent', students, 'id', (row) => `${row.first_name} ${row.last_name}`);
             fillSelect('#uploadProject, #projectInput, #barcodeProject, #timelineProject', projects, 'id', (row) => `${row.code} - ${row.title}`);
@@ -52,13 +60,6 @@
     function studentName(id) {
         const student = students.find((row) => row.id === id) || {};
         return `${student.first_name || ''} ${student.last_name || ''}`.trim() || id || '';
-    }
-
-    function loadNavbarProfile() {
-        App.api('profile').done(function (response) {
-            const profile = response.data || {};
-            $('#adminNavbarName').text(profile.name || profile.role || 'ผู้ดูแล');
-        });
     }
 
     function loadStudentsTable() {
@@ -700,6 +701,7 @@
     function initProfile() {
         App.api('profile').done(function (response) {
             const profile = response.data;
+            $('#adminNavbarName').text(profile.name || 'ผู้ดูแล');
             $('#profileName, #profileNamePreview').val(profile.name).text(profile.name);
             $('#profileEmail').val(profile.email);
             $('#profileRole, #profileRolePreview').val(profile.role).text(profile.role);
@@ -711,6 +713,7 @@
             App.api('profile', { method: 'POST', data: App.formToObject($(this)) }).done((response) => {
                 App.toast(response.message);
                 $('#profileNamePreview').text(response.data.name);
+                $('#adminNavbarName').text(response.data.name || 'ผู้ดูแล');
                 $('#profileRolePreview').text(response.data.role);
                 $('#profileAvatar').attr('src', App.url(response.data.avatar || 'assets/img/profile-admin.svg'));
             });
@@ -882,11 +885,10 @@
     $(function () {
         const page = $('body').data('page');
         if (String(page || '').startsWith('portal-') || String(page || '').startsWith('advisor-') || page === 'login') return;
-        loadNavbarProfile();
         if (page === 'students') loadStudentsTable();
         if (page === 'student-add' || page === 'student-edit') initStudentForm();
         if (page === 'student-detail') loadStudentDetail();
-        if (page === 'advisors') { loadLookups().done(loadAdvisorsTable); }
+        if (page === 'advisors') loadAdvisorsTable();
         if (page === 'projects') loadProjectsTable();
         if (page === 'documents') loadDocuments();
         if (['proposal', 'draft', 'complete'].includes(page)) { initUpload(); loadDocuments(page); }

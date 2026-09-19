@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__ . '/../app/store.php';
 require_once __DIR__ . '/../app/ai-risk.php';
+require_once __DIR__ . '/../app/advisor-document-index.php';
 require_once __DIR__ . '/../app/session.php';
 
 start_app_session();
@@ -64,9 +65,13 @@ function advisor_seed_data(): array
 
 function advisor_load_data(): array
 {
-    $statement = shared_database_connection()->prepare('SELECT state_json FROM app_state WHERE state_key = :state_key');
-    $statement->execute(['state_key' => 'advisor_portal']);
-    $json = $statement->fetchColumn();
+    // Every advisor request uses both snapshots; retrieve them in one round trip.
+    $statement = shared_database_connection()->prepare('SELECT state_key, state_json FROM app_state WHERE state_key IN (:portal, :runtime)');
+    $statement->execute(['portal' => 'advisor_portal', 'runtime' => 'runtime']);
+    $states = $statement->fetchAll(PDO::FETCH_KEY_PAIR);
+    $shared = json_decode((string) ($states['runtime'] ?? ''), true);
+    $GLOBALS['advisor_shared_app_data_cache'] = is_array($shared) ? $shared : [];
+    $json = $states['advisor_portal'] ?? false;
     if ($json === false) {
         $legacy = is_file(ADVISOR_DATA) ? json_decode((string) file_get_contents(ADVISOR_DATA), true) : null;
         $data = is_array($legacy) ? $legacy : advisor_seed_data();
@@ -275,16 +280,17 @@ function advisor_students(array $data): array
     $sharedData = shared_app_data();
     if ($advisorId !== '' && !empty($sharedData['students'])) {
         $rows = [];
+        $documentIndex = advisor_document_index($sharedData);
+        $projectsById = [];
+        foreach ($sharedData['projects'] ?? [] as $projectRow) {
+            $projectsById[(string) ($projectRow['id'] ?? '')] ??= $projectRow;
+        }
         foreach ($sharedData['students'] as $student) {
             if (!in_array($advisorId, array_values($student['advisor_roles'] ?? []), true)) {
                 continue;
             }
-            $project = by_id($sharedData['projects'] ?? [], (string) ($student['project_id'] ?? '')) ?? [];
-            $documents = array_values(array_filter(
-                $sharedData['documents'] ?? [],
-                static fn(array $document): bool => ($document['student_id'] ?? '') === ($student['id'] ?? '')
-                    || (!empty($document['group_id']) && ($document['group_id'] ?? '') === (student_group_id($sharedData, (string) ($student['id'] ?? ''))))
-            ));
+            $project = $projectsById[(string) ($student['project_id'] ?? '')] ?? [];
+            $documents = advisor_indexed_documents($documentIndex, (string) ($student['id'] ?? ''));
             $student['name'] = trim(($student['first_name'] ?? '') . ' ' . ($student['last_name'] ?? ''));
             $student['project_title'] = $project['title'] ?? '-';
             $student['project_id'] = $project['id'] ?? '';

@@ -12,15 +12,7 @@ declare(strict_types=1);
 function latest_project_risk_score(string $projectId): ?array
 {
     if ($projectId === '') return null;
-    if (ai_web_processing_enabled()
-        && filter_var(ai_title_config_value('AI_RISK_ENABLED', 'true'), FILTER_VALIDATE_BOOLEAN)) {
-        try {
-            refresh_project_risk_score_if_stale($projectId);
-        } catch (Throwable $error) {
-            // Risk scoring is advisory; a temporary failure must not break the portal.
-            error_log('[AI WEB RISK] ' . $error->getMessage());
-        }
-    }
+    // Read the last worker result only. Page views must never run a risk scan.
     $statement = database_connection()->prepare(
         'SELECT project_id, score, risk_level, confidence, stage, progress_snapshot,
                 last_activity_at, factors_json, recommendation, engine, calculated_at
@@ -93,11 +85,15 @@ function active_project_median_progress(PDO $pdo): ?float
     return count($values) % 2 ? (float) $values[$middle] : ($values[$middle - 1] + $values[$middle]) / 2;
 }
 
-function calculate_project_risk(array $project, ?float $medianProgress): array
+function calculate_project_risk(array $project, ?float $medianProgress, ?array $inputs = null): array
 {
-    $pdo = database_connection();
     $projectId = (string) $project['id'];
     $studentId = (string) ($project['student_id'] ?? '');
+    if ($inputs !== null) {
+        $documents = $inputs['documents'];
+        $approvals = $inputs['approvals'];
+    } else {
+    $pdo = database_connection();
     $documentStatement = $pdo->prepare(
         'SELECT id, type, chapter, status, uploaded_at, approved_at
          FROM documents WHERE project_id = :project_id ORDER BY uploaded_at'
@@ -114,6 +110,7 @@ function calculate_project_risk(array $project, ?float $medianProgress): array
     );
     $approvalStatement->execute(['project_id' => $projectId, 'student_id' => $studentId]);
     $approvals = $approvalStatement->fetchAll();
+    }
 
     $activityDates = [(string) ($project['updated_at'] ?? '')];
     foreach ($documents as $document) {
@@ -241,8 +238,36 @@ function process_project_risk_scores(int $limit = 100): array
     )->fetchAll();
     $median = active_project_median_progress($pdo);
     $levels = ['low' => 0, 'watch' => 0, 'high' => 0, 'critical' => 0];
+    if (!$projects) return ['processed' => 0, 'levels' => $levels, 'median_progress' => $median];
+    // Fetch inputs once per bounded batch instead of two queries per project.
+    $projectIds = array_column($projects, 'id');
+    $studentIds = array_values(array_unique(array_map(static fn(array $project): string => (string) ($project['student_id'] ?? ''), $projects)));
+    $projectSlots = implode(',', array_fill(0, count($projectIds), '?'));
+    $studentSlots = implode(',', array_fill(0, count($studentIds), '?'));
+    $documentsByProject = [];
+    $documentsStatement = $pdo->prepare("SELECT id, project_id, type, chapter, status, uploaded_at, approved_at FROM documents WHERE project_id IN ({$projectSlots}) ORDER BY uploaded_at");
+    $documentsStatement->execute($projectIds);
+    foreach ($documentsStatement->fetchAll() as $document) {
+        $documentsByProject[(string) $document['project_id']][] = $document;
+    }
+    $approvalsByProject = [];
+    $approvalsByStudent = [];
+    $approvalsStatement = $pdo->prepare("SELECT documents.project_id, approvals.student_id, approvals.document_id, approvals.status, approvals.created_at, approvals.approved_at
+        FROM approvals LEFT JOIN documents ON documents.id = approvals.document_id
+        WHERE documents.project_id IN ({$projectSlots}) OR (approvals.document_id IS NULL AND approvals.student_id IN ({$studentSlots}))");
+    $approvalsStatement->execute(array_merge($projectIds, $studentIds));
+    foreach ($approvalsStatement->fetchAll() as $approval) {
+        if ($approval['document_id'] === null) {
+            $approvalsByStudent[(string) $approval['student_id']][] = $approval;
+        } else {
+            $approvalsByProject[(string) $approval['project_id']][] = $approval;
+        }
+    }
     foreach ($projects as $project) {
-        $risk = calculate_project_risk($project, $median);
+        $risk = calculate_project_risk($project, $median, [
+            'documents' => $documentsByProject[(string) $project['id']] ?? [],
+            'approvals' => array_merge($approvalsByProject[(string) $project['id']] ?? [], $approvalsByStudent[(string) ($project['student_id'] ?? '')] ?? []),
+        ]);
         save_project_risk_score($risk);
         $levels[$risk['risk_level']]++;
     }

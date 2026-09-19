@@ -337,19 +337,6 @@
         });
     }
 
-    function initUiMotion() {
-        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-        const elements = document.querySelectorAll('.content-area .card, .content-area .summary-card, .content-area .status-card');
-        elements.forEach((element, index) => {
-            element.classList.add('ui-reveal');
-            element.style.setProperty('--reveal-delay', `${Math.min(index % 8, 7) * 55}ms`);
-        });
-
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-            elements.forEach((element) => element.classList.add('is-visible'));
-        }));
-    }
-
     window.App = {
         api,
         badge,
@@ -380,7 +367,6 @@
         initLayout();
         initGlobalActions();
         initInterfacePolish();
-        initUiMotion();
         if ($('body').data('page') === 'login') {
             initLogin();
         }

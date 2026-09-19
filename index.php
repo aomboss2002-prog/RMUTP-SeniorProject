@@ -158,4 +158,32 @@ if ($page === 'portal-dashboard') {
     $studentDashboardBootstrap = student_dashboard_payload(student_context($data));
 }
 
+$projectDataPages = ['portal-project', 'portal-proposal', 'portal-draft', 'portal-complete', 'portal-documents', 'portal-status', 'portal-barcode'];
+if (in_array($page, array_merge($projectDataPages, ['portal-profile', 'portal-notifications']), true)) {
+    define('STUDENT_API_LIBRARY_ONLY', true);
+    require __DIR__ . '/api/student-api.php';
+    $pageData = $data;
+    foreach (['students', 'advisors'] as $collection) {
+        foreach ($pageData[$collection] ?? [] as $key => $account) {
+            unset($pageData[$collection][$key]['password_hash']);
+        }
+    }
+    $pageContext = student_context($pageData);
+    $studentProjectBootstrap = [
+        'api/student/notifications/' => array_merge(['success' => true], portal_notification_payload($pageContext)),
+    ];
+    if (in_array($page, $projectDataPages, true)) {
+        $studentProjectBootstrap['api/student/project/'] = [
+            'success' => true, 'data' => portal_project_payload($pageContext, $page === 'portal-project'),
+        ];
+    }
+    if ($page === 'portal-project') {
+        $studentProjectBootstrap['api/student/group/'] = ['success' => true, 'data' => student_group_payload($pageData, $pageContext)];
+    }
+    if ($page === 'portal-profile' || ($page === 'portal-project' && $pageContext['group'])) {
+        $studentProjectBootstrap['api/student/profile/'] = ['success' => true, 'data' => student_profile_payload($pageData, $pageContext)];
+    }
+    header('Cache-Control: private, no-store');
+}
+
 require __DIR__ . '/views/layout.php';

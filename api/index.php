@@ -10,7 +10,6 @@ header('Content-Type: application/json; charset=utf-8');
 $method = $_POST['_method'] ?? $_SERVER['REQUEST_METHOD'];
 $resource = $_GET['resource'] ?? '';
 $action = $_GET['action'] ?? '';
-$data = load_data();
 
 function respond(array $payload, int $status = 200): void
 {
@@ -222,6 +221,7 @@ if ($resource === 'auth' && $action === 'login') {
         if (login_rate_limited((string) $payload['email'])) {
             respond(['success' => false, 'message' => 'Too many login attempts. Try again in 15 minutes.'], 429);
         }
+        $data = load_data();
         $user = authenticate_user($payload, $data);
         if ($user) {
             if (!empty($user['_password_migrated'])) {
@@ -290,6 +290,8 @@ if ($resource === 'system-health') {
     }
     respond(['success' => false, 'message' => 'Unknown diagnostic action.'], 404);
 }
+
+$data = load_data();
 
 if ($resource === 'dashboard') {
     $statuses = array_count_values(array_column($data['projects'], 'status'));
@@ -872,6 +874,7 @@ if ($resource === 'profile') {
     if ($method === 'POST') {
         $data['profile'] = array_merge($data['profile'], request_json());
         save_data($data);
+        $_SESSION['app_user']['name'] = (string) ($data['profile']['name'] ?? 'ผู้ดูแล');
         respond(['success' => true, 'data' => $data['profile'], 'message' => 'Profile updated']);
     }
 }

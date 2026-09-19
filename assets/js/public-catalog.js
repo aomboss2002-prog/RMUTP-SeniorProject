@@ -133,6 +133,7 @@
     }
 
     async function loadCatalog() {
+        window.clearTimeout(debounceTimer);
         if (requestController) requestController.abort();
         requestController = new AbortController();
         results.setAttribute('aria-busy', 'true');
@@ -174,7 +175,11 @@
         clearSearch.hidden = !search.value;
         if (event.target === search) scheduleLoad();
     });
-    form.addEventListener('change', () => { currentPage = 1; loadCatalog(); });
+    form.addEventListener('change', (event) => {
+        if (event.target === search) return;
+        currentPage = 1;
+        loadCatalog();
+    });
     form.addEventListener('submit', (event) => { event.preventDefault(); currentPage = 1; loadCatalog(); });
     clearSearch.addEventListener('click', () => { search.value = ''; clearSearch.hidden = true; search.focus(); currentPage = 1; loadCatalog(); });
     resetFilters.addEventListener('click', () => { form.reset(); clearSearch.hidden = true; currentPage = 1; loadCatalog(); });

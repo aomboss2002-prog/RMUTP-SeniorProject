@@ -203,14 +203,14 @@ function sync_workflow_documents_to_database(PDO $pdo, array $current, array $pr
     foreach ($old as $id => $_) if (!isset($now[$id])) $delete->execute(['id' => $id]);
 }
 
-function project_tracking_history(string $projectId): array
+function project_tracking_history(string $projectId, bool $latestOnly = false): array
 {
     if ($projectId === '') return [];
     $pdo = database_connection();
-    ensure_project_tracking_schema($pdo);
     $statement = $pdo->prepare('SELECT id, project_id, document_id, event_type, stage, chapter,
         previous_progress, current_progress, actor_type, actor_id, actor_name, occurred_at
-        FROM project_progress_history WHERE project_id = :project_id ORDER BY occurred_at ASC, id ASC');
+        FROM project_progress_history WHERE project_id = :project_id ORDER BY '
+        . ($latestOnly ? 'occurred_at DESC, id DESC LIMIT 1' : 'occurred_at ASC, id ASC'));
     $statement->execute(['project_id' => $projectId]);
     return $statement->fetchAll() ?: [];
 }
@@ -219,7 +219,6 @@ function project_followups(string $projectId): array
 {
     if ($projectId === '') return [];
     $pdo = database_connection();
-    ensure_project_tracking_schema($pdo);
     $statement = $pdo->prepare('SELECT f.id, f.project_id, f.advisor_id, f.note, f.issue, f.next_action,
         f.followup_at, f.created_at, f.updated_at, COALESCE(a.name, \'Former advisor\') AS advisor_name
         FROM advisor_followups f LEFT JOIN advisors a ON a.id = f.advisor_id
@@ -268,7 +267,7 @@ function derive_project_tracking(array $documents, array $history = []): array
     $lastActivity = null;
     foreach ($history as $row) if (($row['occurred_at'] ?? '') > ($lastActivity ?? '')) $lastActivity = $row['occurred_at'];
     if ($lastActivity === null) foreach ($documents as $row) {
-        $stamp = (string) ($row['approved_at'] ?: ($row['uploaded_at'] ?? ''));
+        $stamp = (string) (($row['approved_at'] ?? '') ?: ($row['uploaded_at'] ?? ''));
         if ($stamp > ($lastActivity ?? '')) $lastActivity = $stamp;
     }
     $status = $current['status'];
@@ -284,11 +283,12 @@ function derive_project_tracking(array $documents, array $history = []): array
     ];
 }
 
-function project_tracking_payload(string $projectId, array $documents, bool $includeFollowups = true): array
+function project_tracking_payload(string $projectId, array $documents, bool $includeFollowups = true, bool $includeHistory = true): array
 {
-    $history = project_tracking_history($projectId);
+    // Summary views need only the latest activity; migrations own schema setup.
+    $history = project_tracking_history($projectId, !$includeHistory);
     $tracking = derive_project_tracking($documents, $history);
-    $tracking['history'] = $history;
+    $tracking['history'] = $includeHistory ? $history : [];
     $tracking['followups'] = $includeFollowups ? project_followups($projectId) : [];
     return $tracking;
 }

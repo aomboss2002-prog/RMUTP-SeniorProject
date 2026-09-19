@@ -3,13 +3,30 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script>
+    (() => {
+        try {
+            const mode = new URL(location.href).searchParams.get('perf');
+            if (mode === '0') sessionStorage.removeItem('rmutp-perf-enabled');
+            if (mode === '1') sessionStorage.setItem('rmutp-perf-enabled', '1');
+            if (sessionStorage.getItem('rmutp-perf-enabled') !== '1') return;
+            const script = document.createElement('script');
+            script.src = <?= json_encode(versioned_asset_url('js/page-performance.js'), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+            script.async = true;
+            document.head.appendChild(script);
+        } catch (_error) {}
+    })();
+    </script>
     <?php $pageCsrfToken = (($page ?? '') === 'login') ? bin2hex(random_bytes(32)) : csrf_token(); ?>
     <meta name="csrf-token" content="<?= e($pageCsrfToken) ?>">
     <meta name="app-base-url" content="<?= e(app_base_url()) ?>">
     <meta name="storage-driver" content="<?= e(function_exists('storage_driver') ? storage_driver() : 'local') ?>">
     <meta name="blob-path-prefix" content="<?= e(function_exists('storage_blob_prefix') ? storage_blob_prefix() : 'rmutp') ?>">
+    <?php if (page_uses_blob_upload((string) ($page ?? '')) && function_exists('storage_driver') && storage_driver() === 'vercel_blob'): ?>
+    <meta name="blob-upload-script" content="<?= e(versioned_asset_url('js/vercel-blob-upload.js')) ?>">
+    <?php endif; ?>
     <title><?= e($meta['title'] ?? 'ระบบจัดการโครงงาน RMUTP') ?> | ระบบจัดการโครงงาน RMUTP</title>
-    <link rel="icon" type="image/png" sizes="any" href="<?= e(asset_url('img/rmutp-logo.png')) ?>">
+    <link rel="icon" type="image/png" sizes="any" href="<?= e(versioned_asset_url('img/rmutp-logo-web.png')) ?>">
     <link href="<?= e(versioned_asset_url('vendor/bootstrap/bootstrap.min.css')) ?>" rel="stylesheet">
     <?php if (page_uses_datatables((string) ($page ?? ''))): ?>
         <link href="<?= e(versioned_asset_url('vendor/datatables/dataTables.bootstrap5.min.css')) ?>" rel="stylesheet">

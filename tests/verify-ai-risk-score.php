@@ -36,7 +36,10 @@ try {
     $projectStatement = $pdo->prepare('SELECT id, student_id, advisor_id, status, progress, updated_at FROM projects WHERE id = :id');
     $projectStatement->execute(['id' => $staleId]);
     $staleRisk = calculate_project_risk($projectStatement->fetch(), $median);
-    if (!$webMode) save_project_risk_score($staleRisk);
+    if ($webMode && latest_project_risk_score($staleId) !== null) {
+        throw new RuntimeException('Page read unexpectedly calculated a missing risk score.');
+    }
+    save_project_risk_score($staleRisk);
     $storedStale = latest_project_risk_score($staleId);
     if (!$storedStale || $storedStale['score'] < 60) throw new RuntimeException('Stale project was not marked high risk.');
     if (count($storedStale['factors']) < 3) throw new RuntimeException('Risk reasons were not stored.');

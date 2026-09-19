@@ -3,7 +3,7 @@
 <main class="login-screen">
     <section class="login-panel">
         <div class="login-brand">
-            <img src="<?= e(asset_url('img/rmutp-logo.png')) ?>" alt="RMUTP">
+            <img decoding="async" width="105" height="192" src="<?= e(versioned_asset_url('img/rmutp-logo-web.png')) ?>" alt="RMUTP">
             <div><p class="eyebrow mb-1">Advisor Portal</p><h1>เข้าสู่ระบบอาจารย์ที่ปรึกษา</h1></div>
         </div>
         <form id="advisorLoginForm" class="login-card" method="post" action="<?= e(route_url('advisor-login')) ?>">

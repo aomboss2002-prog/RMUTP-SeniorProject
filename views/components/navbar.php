@@ -3,7 +3,7 @@
         <i class="fa-solid fa-bars"></i>
     </button>
     <div class="navbar-title">
-        <img src="<?= e(asset_url('img/rmutp-logo.png')) ?>" alt="RMUTP Logo">
+        <img decoding="async" width="105" height="192" src="<?= e(versioned_asset_url('img/rmutp-logo-web.png')) ?>" alt="RMUTP Logo">
         <div>
             <strong>ผู้ดูแล</strong>
             <span><?= e($meta['title'] ?? 'แดชบอร์ด') ?></span>
