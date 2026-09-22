@@ -279,13 +279,24 @@ function database_connection(): PDO
         return $pdo;
     }
     $config = env_config();
-    $host = $config['DB_HOST'] ?? 'localhost';
-    $port = (int) ($config['DB_PORT'] ?? 3306);
+    $databaseUrl = trim((string) ($config['DATABASE_URL'] ?? $config['MYSQL_URL'] ?? ''));
+    if ($databaseUrl !== '') {
+        $parts = parse_url($databaseUrl);
+        if (is_array($parts) && ($parts['scheme'] ?? '') === 'mysql') {
+            $config['DB_HOST'] = $parts['host'] ?? ($config['DB_HOST'] ?? 'localhost');
+            $config['DB_PORT'] = $parts['port'] ?? ($config['DB_PORT'] ?? 3306);
+            $config['DB_USERNAME'] = isset($parts['user']) ? rawurldecode($parts['user']) : ($config['DB_USERNAME'] ?? 'root');
+            $config['DB_PASSWORD'] = isset($parts['pass']) ? rawurldecode($parts['pass']) : ($config['DB_PASSWORD'] ?? '');
+            $config['DB_DATABASE'] = isset($parts['path']) ? ltrim($parts['path'], '/') : ($config['DB_DATABASE'] ?? 'rmutp_senior_project');
+        }
+    }
+    $host = $config['DB_HOST'] ?? $config['MYSQL_HOST'] ?? 'localhost';
+    $port = (int) ($config['DB_PORT'] ?? $config['MYSQL_PORT'] ?? 3306);
     // Support both the local/XAMPP variable names and the shorter aliases
     // commonly configured on Vercel/Railway.
-    $database = $config['DB_DATABASE'] ?? $config['DB_NAME'] ?? 'rmutp_senior_project';
-    $username = $config['DB_USERNAME'] ?? $config['DB_USER'] ?? 'root';
-    $password = $config['DB_PASSWORD'] ?? $config['DB_PASS'] ?? '';
+    $database = $config['DB_DATABASE'] ?? $config['DB_NAME'] ?? $config['MYSQL_DATABASE'] ?? 'rmutp_senior_project';
+    $username = $config['DB_USERNAME'] ?? $config['DB_USER'] ?? $config['MYSQL_USER'] ?? 'root';
+    $password = $config['DB_PASSWORD'] ?? $config['DB_PASS'] ?? $config['MYSQL_PASSWORD'] ?? '';
     $pdo = new PDO(
         "mysql:host={$host};port={$port};dbname={$database};charset=utf8mb4",
         $username,

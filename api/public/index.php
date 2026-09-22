@@ -36,6 +36,7 @@ try {
         ($connected - $started) * 1000, ($loaded - $connected) * 1000, (microtime(true) - $loaded) * 1000));
     echo $body;
 } catch (Throwable $error) {
+    error_log('[PUBLIC CATALOG] ' . $error->getMessage());
     header('Cache-Control: no-store');
     http_response_code(500);
     echo json_encode(['success' => false, 'message' => 'ไม่สามารถโหลดคลังโครงงานได้ในขณะนี้'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
