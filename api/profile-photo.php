@@ -4,24 +4,33 @@ declare(strict_types=1);
 require_once __DIR__ . '/../app/store.php';
 require_once __DIR__ . '/../app/session.php';
 require_once __DIR__ . '/../app/storage.php';
+require_once __DIR__ . '/../app/runtime-read.php';
 start_app_session();
 
 $studentId = trim((string) ($_GET['id'] ?? ''));
-$data = load_data();
-$student = find_row($data['students'] ?? [], $studentId);
+$appUser = $_SESSION['app_user'] ?? [];
+if (!in_array($appUser['role'] ?? '', ['admin', 'student'], true) && empty($_SESSION['advisor_user']['id'])) {
+    http_response_code(403);
+    exit('Access denied.');
+}
+// Persist session bookkeeping and release file-session locks before DB/storage I/O.
+session_write_close();
+$statement = database_connection()->prepare('SELECT id, photo FROM students WHERE id = :id LIMIT 1');
+$statement->execute(['id' => $studentId]);
+$student = $statement->fetch(PDO::FETCH_ASSOC);
 if (!$student) {
     http_response_code(404);
     exit('Student not found.');
 }
 
 $allowed = false;
-$appUser = $_SESSION['app_user'] ?? [];
 if (($appUser['role'] ?? '') === 'admin') {
     $allowed = true;
 } elseif (($appUser['role'] ?? '') === 'student') {
     $viewerId = (string) ($appUser['id'] ?? '');
     $allowed = $viewerId === $studentId;
     if (!$allowed) {
+        $data = runtime_read_collections(database_connection(), ['groups']);
         foreach ($data['groups'] ?? [] as $group) {
             $members = $group['member_ids'] ?? [];
             if (in_array($viewerId, $members, true) && in_array($studentId, $members, true)) {
@@ -31,6 +40,7 @@ if (($appUser['role'] ?? '') === 'admin') {
         }
     }
 } elseif (!empty($_SESSION['advisor_user']['id'])) {
+    $data = runtime_read_collections(database_connection(), ['groups']);
     $advisorId = (string) $_SESSION['advisor_user']['id'];
     foreach ($data['groups'] ?? [] as $group) {
         if (in_array($studentId, $group['member_ids'] ?? [], true)

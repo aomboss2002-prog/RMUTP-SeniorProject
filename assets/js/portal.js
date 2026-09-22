@@ -871,7 +871,7 @@
     }
 
     function loadTimeline() {
-        request('api/student/timeline/').done((response) => {
+        return request('api/student/timeline/').done((response) => {
             if (response.durable) ProjectTrackingUI.renderHistory('#studentFullTimeline', response.data);
             else renderTimeline('#studentFullTimeline', response.data);
         });
@@ -948,7 +948,7 @@
     }
 
     function loadMessages() {
-        request('api/student/messages/').done(function (response) {
+        return request('api/student/messages/').done(function (response) {
             const messages = response.data.messages || [];
             const recipients = response.data.recipients || [];
             const selectedRecipient = $('#studentMessageRecipient').val();
@@ -1184,20 +1184,23 @@
     $(function () {
         const currentPage = page();
         if (!String(currentPage).startsWith('portal-')) return;
+        let primaryRequest = null;
         initForms();
         if (currentPage === 'portal-dashboard') loadDashboard();
         if (currentPage === 'portal-profile') loadProfile();
         if (currentPage === 'portal-project') loadProjectPage();
         if (['portal-proposal', 'portal-draft', 'portal-complete'].includes(currentPage)) { initUpload(); loadStage(); }
         if (currentPage === 'portal-barcode') loadBarcode();
-        if (currentPage === 'portal-timeline') loadTimeline();
+        if (currentPage === 'portal-timeline') primaryRequest = loadTimeline();
         if (currentPage === 'portal-notifications') loadNotifications();
         if (currentPage === 'portal-documents') loadDocuments();
-        if (currentPage === 'portal-messages') loadMessages();
+        if (currentPage === 'portal-messages') primaryRequest = loadMessages();
         if (currentPage === 'portal-status') loadStatus();
 
         if (currentPage !== 'portal-dashboard' && currentPage !== 'portal-notifications') {
-            request('api/student/notifications/').done((response) => updateCounter(response.unread));
+            const refreshCounter = () => request('api/student/notifications/').done((response) => updateCounter(response.unread));
+            if (primaryRequest) primaryRequest.always(refreshCounter);
+            else refreshCounter();
         }
         // Unused initial data must not survive a later group/profile mutation.
         projectBootstrap = {};

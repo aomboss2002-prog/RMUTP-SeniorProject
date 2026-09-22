@@ -127,25 +127,35 @@
                 </tr>`).join(''));
             App.enhanceTable('#pendingApprovalsTable', { searching: false, pageLength: 5 });
 
-            bindDashboardSearch(data.students, data.projects);
         }).always(() => App.showLoader(false));
     }
 
-    function bindDashboardSearch(students, projects) {
+    function bindDashboardSearch() {
+        let timer;
+        let pending;
+        let revision = 0;
         $('#dashboardSearch').off('input').on('input', function () {
-            const keyword = $(this).val().trim().toLowerCase();
+            const keyword = $(this).val().trim();
+            const currentRevision = ++revision;
+            clearTimeout(timer);
+            if (pending) pending.abort();
             const $results = $('#dashboardSearchResults');
+            $results.hide().empty();
             if (!keyword) {
-                $results.hide().empty();
                 return;
             }
-            const studentMatches = students.filter((row) => `${row.code} ${row.first_name} ${row.last_name} ${row.major}`.toLowerCase().includes(keyword)).slice(0, 4);
-            const projectMatches = projects.filter((row) => `${row.code} ${row.title} ${row.student_name}`.toLowerCase().includes(keyword)).slice(0, 4);
+            timer = setTimeout(() => {
+            pending = App.api('dashboard', { query: { action: 'search', q: keyword } }).done((response) => {
+            if (currentRevision !== revision) return;
+            const studentMatches = response.data.students || [];
+            const projectMatches = response.data.projects || [];
             const html = [
-                ...studentMatches.map((row) => `<a class="search-result" href="${App.url(`admin/students/detail.php?id=${row.id}`)}"><span>${App.escapeHtml(row.first_name)} ${App.escapeHtml(row.last_name)}</span><small>${App.escapeHtml(row.code)}</small></a>`),
+                ...studentMatches.map((row) => `<a class="search-result" href="${App.url(`admin/students/detail.php?id=${encodeURIComponent(row.id)}`)}"><span>${App.escapeHtml(row.first_name)} ${App.escapeHtml(row.last_name)}</span><small>${App.escapeHtml(row.code)}</small></a>`),
                 ...projectMatches.map((row) => `<a class="search-result" href="${App.url('admin/page.php?view=projects')}"><span>${App.escapeHtml(row.title)}</span><small>${App.escapeHtml(row.code)}</small></a>`)
             ].join('');
             $results.html(html || '<div class="search-result text-muted">ไม่พบข้อมูล</div>').show();
+            });
+            }, 300);
         });
     }
 
@@ -153,6 +163,7 @@
 
     $(function () {
         if ($('body').data('page') === 'dashboard') {
+            bindDashboardSearch();
             loadDashboard();
         }
     });

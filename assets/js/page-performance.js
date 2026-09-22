@@ -49,6 +49,9 @@
             observationMs: round(performance.now()),
             navigationType: nav?.type || 'unknown',
             ttfbMs: nav ? round(nav.responseStart - nav.startTime) : null,
+            htmlReceivedMs: nav?.responseEnd > 0 ? round(nav.responseEnd - nav.startTime) : null,
+            htmlReceiveDurationMs: nav?.responseEnd > 0 ? round(nav.responseEnd - nav.responseStart) : null,
+            afterHtmlToDomMs: nav?.domContentLoadedEventEnd > 0 ? round(Math.max(0, nav.domContentLoadedEventEnd - nav.responseEnd)) : null,
             domReadyMs: nav?.domContentLoadedEventEnd > 0 ? round(nav.domContentLoadedEventEnd) : null,
             loadMs: nav?.loadEventEnd > 0 ? round(nav.loadEventEnd) : null,
             lcpMs: lcp,
@@ -59,6 +62,11 @@
             slowestResources: [...resources].sort((a, b) => b.duration - a.duration).slice(0, 10).map((entry) => ({
                 path: safePath(entry.name), type: entry.initiatorType,
                 durationMs: round(entry.duration),
+                startMs: round(entry.startTime),
+                responseEndMs: round(entry.responseEnd),
+                serverTiming: (entry.serverTiming || [])
+                    .filter((timing) => ['db_connect', 'db_query', 'catalog_read', 'catalog_build', 'health'].includes(timing.name))
+                    .map((timing) => ({ name: timing.name, durationMs: round(timing.duration) })),
                 status: entry.responseStatus || null,
                 transferBytes: entry.transferSize || 0
             }))
@@ -88,7 +96,7 @@
     function render(row) {
         if (!root) return;
         root.querySelector('#state').textContent = stopped ? 'บันทึกผลแล้ว' : 'กำลังวัด · ช่วงเก็บข้อมูล 15 วินาที';
-        root.querySelector('#metrics').textContent = `TTFB ${seconds(row.ttfbMs)} · DOM ${seconds(row.domReadyMs)} · Load ${seconds(row.loadMs)} · LCP ${seconds(row.lcpMs)}`;
+        root.querySelector('#metrics').textContent = `TTFB ${seconds(row.ttfbMs)} · HTML รับครบ ${seconds(row.htmlReceivedMs)} · DOM ${seconds(row.domReadyMs)} · Load ${seconds(row.loadMs)} · LCP ${seconds(row.lcpMs)}`;
         root.querySelector('#network').textContent = `${row.completedRequests} คำขอที่เสร็จแล้ว · API ${row.apiRequests} · API ช้าที่สุด ${seconds(row.slowestApiMs)} · ขนาดรับส่งที่อ่านได้ ${(row.knownTransferBytes / 1024).toFixed(0)} KB`;
         table('#history', ['หน้าที่เปิดล่าสุด', 'TTFB', 'Load', 'LCP'], records.slice(-10).reverse().map((item) => [item.page, seconds(item.ttfbMs), seconds(item.loadMs), seconds(item.lcpMs)]));
         table('#resources', ['ทรัพยากรที่ช้าในหน้านี้', 'เวลา'], row.slowestResources.slice(0, 5).map((item) => [item.path, seconds(item.durationMs)]));

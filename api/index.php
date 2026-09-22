@@ -187,14 +187,14 @@ function authenticate_user(array $payload, array &$data): ?array
     return null;
 }
 
-function enrich_project(array $project, array $data): array
+function enrich_project(array $project, array $data, ?array $index = null): array
 {
-    $student = find_row($data['students'], $project['student_id'] ?? '');
-    $advisor = find_row($data['advisors'], $project['advisor_id'] ?? '');
+    $student = $index !== null ? ($index['students'][$project['student_id'] ?? ''] ?? null) : find_row($data['students'], $project['student_id'] ?? '');
+    $advisor = $index !== null ? ($index['advisors'][$project['advisor_id'] ?? ''] ?? null) : find_row($data['advisors'], $project['advisor_id'] ?? '');
     $project['student_name'] = trim(($student['first_name'] ?? '') . ' ' . ($student['last_name'] ?? ''));
     $project['advisor_name'] = $advisor['name'] ?? '';
     $projectId = (string) ($project['id'] ?? '');
-    $documents = array_values(array_filter(
+    $documents = $index !== null ? ($index['documents'][$projectId] ?? []) : array_values(array_filter(
         $data['documents'] ?? [],
         static fn(array $document): bool => (string) ($document['project_id'] ?? '') === $projectId
     ));
@@ -262,6 +262,26 @@ if (($_SESSION['app_user']['role'] ?? '') !== 'admin') {
 
 require_csrf_token();
 
+if ($resource === 'dashboard' && $action === 'search' && $method === 'GET') {
+    require_once __DIR__ . '/../app/dashboard-search.php';
+    $keyword = is_string($_GET['q'] ?? null) ? $_GET['q'] : '';
+    header('Cache-Control: private, no-store');
+    respond(['success' => true, 'data' => dashboard_search(database_connection(), $keyword)]);
+}
+
+// This scoped read must precede load_data(): do not deserialize the full runtime store.
+if (in_array($resource, ['projects', 'documents'], true) && $action === 'page' && $method === 'GET') {
+    require_once __DIR__ . '/../app/admin-list.php';
+    header('Cache-Control: private, no-store');
+    respond(admin_list_page(database_connection(), $resource, $_GET));
+}
+
+if ($resource === 'students' && $action === 'page' && $method === 'GET') {
+    require_once __DIR__ . '/../app/student-list.php';
+    header('Cache-Control: private, no-store');
+    respond(student_list_page(database_connection(), $_GET));
+}
+
 if ($resource === 'system-health') {
     if ($method === 'GET') {
         respond(['success' => true, 'data' => system_health_snapshot()]);
@@ -291,76 +311,14 @@ if ($resource === 'system-health') {
     respond(['success' => false, 'message' => 'Unknown diagnostic action.'], 404);
 }
 
-$data = load_data();
-
 if ($resource === 'dashboard') {
-    $statuses = array_count_values(array_column($data['projects'], 'status'));
-    $uploads = array_count_values(array_column($data['documents'], 'type'));
-    $riskOverview = [
-        'total' => 0,
-        'latest_calculated_at' => null,
-        'counts' => ['low' => 0, 'watch' => 0, 'high' => 0, 'critical' => 0],
-    ];
-    try {
-        $riskRows = database_connection()->query(
-            'SELECT LOWER(risk_level) AS risk_level, COUNT(*) AS total, MAX(calculated_at) AS latest_calculated_at
-             FROM project_risk_scores
-             GROUP BY LOWER(risk_level)'
-        )->fetchAll();
-        foreach ($riskRows as $riskRow) {
-            $level = (string) ($riskRow['risk_level'] ?? '');
-            if (!array_key_exists($level, $riskOverview['counts'])) {
-                continue;
-            }
-            $count = (int) ($riskRow['total'] ?? 0);
-            $riskOverview['counts'][$level] = $count;
-            $riskOverview['total'] += $count;
-            $calculatedAt = $riskRow['latest_calculated_at'] ?? null;
-            if ($calculatedAt && (!$riskOverview['latest_calculated_at'] || $calculatedAt > $riskOverview['latest_calculated_at'])) {
-                $riskOverview['latest_calculated_at'] = $calculatedAt;
-            }
-        }
-    } catch (Throwable $exception) {
-        // Keep the dashboard available while the optional risk-score migration is pending.
-    }
-    $dashboardStudents = array_map(static fn(array $student): array => [
-        'id' => $student['id'] ?? '',
-        'code' => $student['code'] ?? '',
-        'first_name' => $student['first_name'] ?? '',
-        'last_name' => $student['last_name'] ?? '',
-        'major' => $student['major'] ?? '',
-    ], $data['students']);
-    $dashboardStudentsById = collection_rows_by_id($data['students']);
-    $dashboardProjects = array_map(static function (array $project) use ($dashboardStudentsById): array {
-        $student = $dashboardStudentsById[(string) ($project['student_id'] ?? '')] ?? [];
-        return [
-            'id' => $project['id'] ?? '',
-            'code' => $project['code'] ?? '',
-            'title' => $project['title'] ?? '',
-            'student_name' => trim((string) ($student['first_name'] ?? '') . ' ' . (string) ($student['last_name'] ?? '')),
-        ];
-    }, $data['projects']);
-    respond([
-        'success' => true,
-        'data' => [
-            'summary' => [
-                'students' => count($data['students']),
-                'advisors' => count($data['advisors']),
-                'projects' => count($data['projects']),
-                'pending' => $statuses['Pending'] ?? 0,
-            ],
-            'project_status' => $statuses,
-            'uploads' => $uploads,
-            'risk_overview' => $riskOverview,
-            'activities' => array_slice($data['activities'], 0, 5),
-            'files' => array_slice($data['documents'], 0, 5),
-            'notifications' => array_slice($data['notifications'], 0, 5),
-            'approvals' => array_slice($data['approvals'], 0, 5),
-            'students' => $dashboardStudents,
-            'projects' => $dashboardProjects,
-        ],
-    ]);
+    if ($method !== 'GET') respond(['success' => false, 'message' => 'Method not allowed.'], 405);
+    require_once __DIR__ . '/../app/admin-dashboard.php';
+    header('Cache-Control: private, no-store');
+    respond(['success' => true, 'data' => admin_dashboard_payload(database_connection())]);
 }
+
+$data = load_data();
 
 if ($resource === 'students') {
     if ($method === 'GET') {
@@ -586,7 +544,11 @@ if ($resource === 'advisors') {
 
 if ($resource === 'projects') {
     if ($method === 'GET') {
-        $projects = array_map(fn($project) => enrich_project($project, $data), $data['projects']);
+        $index = ['students' => collection_rows_by_id($data['students']), 'advisors' => collection_rows_by_id($data['advisors']), 'documents' => []];
+        foreach ($data['documents'] ?? [] as $document) {
+            $index['documents'][(string) ($document['project_id'] ?? '')][] = $document;
+        }
+        $projects = array_map(fn($project) => enrich_project($project, $data, $index), $data['projects']);
         collection_response(['projects' => $projects], 'projects');
     }
     if ($method === 'POST') {
@@ -638,6 +600,16 @@ if ($resource === 'documents') {
     if ($method === 'GET') {
         $type = $_GET['type'] ?? '';
         $documents = $type ? array_values(array_filter($data['documents'], fn($row) => ($row['type'] ?? '') === $type)) : $data['documents'];
+        if (($_GET['include_names'] ?? '') === '1') {
+            $studentsById = collection_rows_by_id($data['students']);
+            $projectsById = collection_rows_by_id($data['projects']);
+            foreach ($documents as &$document) {
+                $student = $studentsById[$document['student_id'] ?? ''] ?? [];
+                $document['student_name'] = trim(($student['first_name'] ?? '') . ' ' . ($student['last_name'] ?? '')) ?: ($document['student_id'] ?? '');
+                $document['project_title'] = ($projectsById[$document['project_id'] ?? '']['title'] ?? '') ?: ($document['project_id'] ?? '');
+            }
+            unset($document);
+        }
         respond(['success' => true, 'data' => $documents]);
     }
     if ($method === 'DELETE') {

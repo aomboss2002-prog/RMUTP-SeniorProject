@@ -59,8 +59,10 @@ function public_catalog_authors(array $document, array $project, array $groupsBy
     return array_values(array_unique($authors));
 }
 
-function public_completed_catalog(array $data, array $query = []): array
+function public_completed_catalog(array $data, array $query = [], ?callable $fileAvailable = null): array
 {
+    $fileAvailable ??= 'public_catalog_file_available';
+    $documentsById = [];
     $studentsById = [];
     foreach ($data['students'] ?? [] as $student) {
         if (!empty($student['id'])) $studentsById[(string) $student['id']] = $student;
@@ -111,7 +113,7 @@ function public_completed_catalog(array $data, array $query = []): array
         $faculty = trim((string) (($group['faculty'] ?? '') ?: ($leader['faculty'] ?? $owner['faculty'] ?? '')));
         $major = trim((string) (($leader['major'] ?? '') ?: ($owner['major'] ?? '')));
         $category = trim((string) ($project['category'] ?? ''));
-        $available = public_catalog_file_available($document);
+        $documentsById[(string) $document['id']] = $document;
 
         $items[] = [
             'document_id' => (string) $document['id'],
@@ -124,10 +126,6 @@ function public_completed_catalog(array $data, array $query = []): array
             'category' => $category,
             'status' => 'Completed',
             'completed_at' => (string) (($document['approved_at'] ?? '') ?: ($document['uploaded_at'] ?? $project['updated_at'] ?? '')),
-            'available' => $available,
-            'download_url' => $available
-                ? rtrim(app_base_url(), '/') . '/api/file.php?' . http_build_query(['id' => (string) $document['id'], 'mode' => 'public-download'])
-                : '',
         ];
     }
 
@@ -180,9 +178,16 @@ function public_completed_catalog(array $data, array $query = []): array
     $total = count($items);
     $totalPages = max(1, (int) ceil($total / $pageSize));
     $page = max(1, min((int) ($query['page'] ?? 1), $totalPages));
+    $pageItems = array_slice($items, ($page - 1) * $pageSize, $pageSize);
+    foreach ($pageItems as &$item) {
+        $item['available'] = (bool) $fileAvailable($documentsById[$item['document_id']]);
+        $item['download_url'] = $item['available']
+            ? rtrim(app_base_url(), '/') . '/api/file.php?' . http_build_query(['id' => $item['document_id'], 'mode' => 'public-download']) : '';
+    }
+    unset($item);
 
     return [
-        'items' => array_slice($items, ($page - 1) * $pageSize, $pageSize),
+        'items' => $pageItems,
         'filters' => $filters,
         'pagination' => [
             'page' => $page,

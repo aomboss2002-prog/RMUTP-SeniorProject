@@ -9,7 +9,7 @@
             </span>
             <div>
                 <p class="archive-brand__eyebrow">RMUTP DIGITAL ARCHIVE</p>
-                <p class="archive-brand__name">ระบบบริหารจัดการวิทยานิพนธ์และงานวิจัย</p>
+                <p class="archive-brand__name">ระบบจัดการและติดตามความก้าวหน้าของโครงงาน กรณีศึกษา สาขา วิชาระบบสารสนเทศ คณะบริหารธุรกิจ มหาวิทยาลัยเทคโนโลยีราชมงคลพระนคร</p>
                 <p class="archive-brand__university">มหาวิทยาลัยเทคโนโลยีราชมงคลพระนคร</p>
             </div>
         </div>
@@ -22,7 +22,7 @@
     <div class="archive-intro">
         <div class="archive-intro__copy">
             <span class="archive-intro__label"><i class="fa-solid fa-book-open" aria-hidden="true"></i> คลังความรู้สาธารณะ</span>
-            <h1>วิทยานิพนธ์และงานวิจัย</h1>
+            <h1>โครงงานสมบูรณ์</h1>
             <p>สืบค้นและดาวน์โหลดผลงานโครงงานของนักศึกษา RMUTP เพื่อการศึกษา อ้างอิง และต่อยอดองค์ความรู้</p>
         </div>
         <div class="archive-stat" aria-label="จำนวนผลงานฉบับสมบูรณ์">

@@ -4,6 +4,7 @@ require_once __DIR__ . '/../app/ai-title-check.php';
 require_once __DIR__ . '/../app/ai-risk.php';
 require_once __DIR__ . '/../app/session.php';
 require_once __DIR__ . '/../app/storage.php';
+require_once __DIR__ . '/../app/runtime-read.php';
 start_app_session();
 
 $studentApiLibraryOnly = defined('STUDENT_API_LIBRARY_ONLY') && STUDENT_API_LIBRARY_ONLY;
@@ -11,9 +12,35 @@ if (!$studentApiLibraryOnly) {
     header('Content-Type: application/json; charset=utf-8');
 }
 
-$data = load_data();
 $method = $_SERVER['REQUEST_METHOD'];
 $endpoint = $studentEndpoint ?? trim((string) ($_GET['endpoint'] ?? ''), '/');
+$notificationReadOnly = !$studentApiLibraryOnly && $method === 'GET' && $endpoint === 'notifications';
+if ($notificationReadOnly) {
+    // Keep authoritative notification/read state in runtime JSON, but skip unrelated collections.
+    $viewerId = current_student_id();
+    require_csrf_token();
+    session_write_close();
+    require_once __DIR__ . '/../app/runtime-read.php';
+    $pdo = database_connection();
+    $statement = $pdo->prepare('SELECT id FROM students WHERE id = :id LIMIT 1');
+    $statement->execute(['id' => $viewerId]);
+    $viewer = $statement->fetch(PDO::FETCH_ASSOC);
+    if (!$viewer) student_respond(['success' => false, 'message' => 'Student not found'], 404);
+    $data = runtime_read_collections($pdo, ['groups', 'notifications']);
+    $data['students'] = [$viewer];
+    header('Cache-Control: private, no-store');
+} elseif (!$studentApiLibraryOnly && $method === 'GET' && in_array($endpoint, ['timeline', 'messages'], true)) {
+    current_student_id();
+    require_csrf_token();
+    session_write_close();
+    $collections = $endpoint === 'timeline'
+        ? ['students', 'groups', 'projects']
+        : ['students', 'groups', 'advisors', 'messages'];
+    $data = runtime_read_collections(database_connection(), $collections);
+    header('Cache-Control: private, no-store');
+} else {
+    $data = load_data();
+}
 
 function student_respond(array $payload, int $status = 200): void
 {
@@ -148,20 +175,8 @@ function student_context(array $data): array
         || in_array($row['document_id'] ?? '', $documentIds, true)
     ));
     $groupId = (string) ($group['id'] ?? '');
-    $notifications = array_values(array_filter($data['notifications'] ?? [], static function ($row) use ($studentId, $groupId): bool {
-        if (($row['student_id'] ?? '') === $studentId) {
-            return true;
-        }
-        if ($groupId !== '' && ($row['group_id'] ?? '') === $groupId) {
-            return true;
-        }
-        return ($row['scope'] ?? '') === 'system';
-    }));
-    $messages = array_values(array_filter($data['messages'] ?? [], static function ($row) use ($studentId, $group): bool {
-        return $group
-            ? (($row['group_id'] ?? '') === ($group['id'] ?? ''))
-            : (($row['student_id'] ?? '') === $studentId && empty($row['group_id']));
-    }));
+    $notifications = student_visible_notifications($data['notifications'] ?? [], $studentId, $groupId);
+    $messages = student_visible_messages($data['messages'] ?? [], $studentId, $group);
 
     return compact('studentId', 'student', 'group', 'advisor', 'project', 'documents', 'comments', 'approvals', 'notifications', 'messages');
 }
@@ -1135,6 +1150,11 @@ if ($endpoint === 'project') {
 if ($endpoint === 'timeline') {
     $projectId = (string) ($context['project']['id'] ?? '');
     $history = $projectId !== '' ? project_tracking_history($projectId) : [];
+    if (!$history && $method === 'GET') {
+        // Legacy fallback needs documents and approval dates, but not messages or notifications.
+        $data = array_merge($data, runtime_read_collections(database_connection(), ['documents', 'approvals']));
+        $context = student_context($data);
+    }
     student_respond(['success' => true, 'data' => $history ?: portal_timeline($context), 'durable' => (bool) $history]);
 }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../../app/store.php';
 require_once __DIR__ . '/../../app/helpers.php';
 require_once __DIR__ . '/../../app/public-catalog.php';
+require_once __DIR__ . '/../../app/public-catalog-source.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: public, max-age=30, stale-while-revalidate=60');
@@ -17,7 +18,11 @@ if (strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) !== 'GET') {
 }
 
 try {
-    $data = load_data();
+    $started = microtime(true);
+    $pdo = database_connection();
+    $connected = microtime(true);
+    $data = public_catalog_source($pdo);
+    $loaded = microtime(true);
     $catalog = public_completed_catalog($data, [
         'q' => trim((string) ($_GET['q'] ?? '')),
         'year' => trim((string) ($_GET['year'] ?? '')),
@@ -26,8 +31,12 @@ try {
         'category' => trim((string) ($_GET['category'] ?? '')),
         'page' => max(1, (int) ($_GET['page'] ?? 1)),
     ]);
-    echo json_encode(['success' => true, 'data' => $catalog], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+    $body = json_encode(['success' => true, 'data' => $catalog], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+    header(sprintf('Server-Timing: db_connect;dur=%.1f, catalog_read;dur=%.1f, catalog_build;dur=%.1f',
+        ($connected - $started) * 1000, ($loaded - $connected) * 1000, (microtime(true) - $loaded) * 1000));
+    echo $body;
 } catch (Throwable $error) {
+    header('Cache-Control: no-store');
     http_response_code(500);
     echo json_encode(['success' => false, 'message' => 'ไม่สามารถโหลดคลังโครงงานได้ในขณะนี้'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 }

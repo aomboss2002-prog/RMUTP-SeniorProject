@@ -63,27 +63,51 @@
     }
 
     function loadStudentsTable() {
-        $.when(loadLookups()).done(function () {
-            $('#studentsTable tbody').html(students.map((row) => `
-                <tr data-status="${App.escapeHtml(row.status)}">
-                    <td>${App.escapeHtml(row.code)}</td>
-                    <td><strong>${App.escapeHtml(row.first_name)} ${App.escapeHtml(row.last_name)}</strong><span class="d-block text-muted">${App.escapeHtml(row.email)}</span></td>
-                    <td>${App.escapeHtml(row.major)}</td>
-                    <td>${App.escapeHtml(advisorName(row.advisor_id))}</td>
-                    <td data-search="${App.escapeHtml(row.status)}">${App.badge(row.status)}</td>
-                    <td class="text-end">
+        if ($.fn.DataTable.isDataTable('#studentsTable')) {
+            $('#studentsTable').DataTable().ajax.reload(null, false);
+            return;
+        }
+        const textColumn = (key) => ({ data: key, render: (value) => App.escapeHtml(value) });
+        const table = App.enhanceTable('#studentsTable', {
+            serverSide: true,
+            processing: true,
+            pageLength: 25,
+            lengthMenu: [25, 50],
+            searchDelay: 350,
+            order: [[0, 'asc']],
+            // The header's full export remains available; these export the visible page.
+            buttons: ['copy', 'csv', 'excel', 'print'].map((extend) => ({
+                extend, text: `${extend.toUpperCase()} (หน้านี้)`,
+                exportOptions: { columns: [0, 1, 2, 3, 4], modifier: { page: 'current' } }
+            })),
+            ajax: (request, callback) => {
+                App.api('students', { query: {
+                    action: 'page', draw: request.draw, start: request.start, length: request.length,
+                    search_text: request.search.value, status: $('#studentStatusFilter').val() || '',
+                    sort_column: request.order[0]?.column ?? 0,
+                    sort_direction: request.order[0]?.dir ?? 'asc'
+                } }).done(callback).fail(() => callback({
+                    draw: request.draw, recordsTotal: 0, recordsFiltered: 0, data: [],
+                    error: 'โหลดข้อมูลไม่สำเร็จ กรุณาลองใหม่'
+                }));
+            },
+            columns: [
+                textColumn('code'),
+                { data: null, render: (row) => `<strong>${App.escapeHtml(row.first_name)} ${App.escapeHtml(row.last_name)}</strong><span class="d-block text-muted">${App.escapeHtml(row.email)}</span>` },
+                textColumn('major'), textColumn('advisor_name'),
+                { data: 'status', render: (value) => App.badge(value) },
+                { data: null, orderable: false, searchable: false, className: 'text-end', render: (row) => {
+                    const id = App.escapeHtml(encodeURIComponent(row.id));
+                    return `
                         <div class="row-actions" role="group" aria-label="จัดการนักศึกษา">
-                            <a class="row-action view" href="${App.url(`admin/students/detail.php?id=${row.id}`)}" title="ดูรายละเอียด" aria-label="ดูรายละเอียด"><i class="fa-solid fa-eye"></i></a>
-                            <a class="row-action edit" href="${App.url(`admin/students/edit.php?id=${row.id}`)}" title="แก้ไข" aria-label="แก้ไข"><i class="fa-solid fa-pen"></i></a>
-                            <button class="row-action delete" type="button" data-action="delete-student" data-id="${row.id}" title="ลบ" aria-label="ลบ"><i class="fa-solid fa-trash"></i></button>
-                        </div>
-                    </td>
-                </tr>`).join(''));
-            const table = App.enhanceTable('#studentsTable');
-            $('#studentStatusFilter').off('change').on('change', function () {
-                table.column(4).search($(this).val()).draw();
-            });
+                            <a class="row-action view" href="${App.url(`admin/students/detail.php?id=${id}`)}" title="ดูรายละเอียด" aria-label="ดูรายละเอียด"><i class="fa-solid fa-eye"></i></a>
+                            <a class="row-action edit" href="${App.url(`admin/students/edit.php?id=${id}`)}" title="แก้ไข" aria-label="แก้ไข"><i class="fa-solid fa-pen"></i></a>
+                            <button class="row-action delete" type="button" data-action="delete-student" data-id="${App.escapeHtml(row.id)}" title="ลบ" aria-label="ลบ"><i class="fa-solid fa-trash"></i></button>
+                        </div>`;
+                } }
+            ]
         });
+        $('#studentStatusFilter').off('change').on('change', () => table.ajax.reload());
     }
 
     function initStudentForm() {
@@ -214,11 +238,48 @@
         });
     }
 
+    function pagedAdminTable(selector, resource, renderRow, extraQuery = {}, filterSelector = '') {
+        if ($.fn.DataTable.isDataTable(selector)) {
+            $(selector).DataTable().ajax.reload(null, false);
+            return;
+        }
+        const columnCount = $(`${selector} thead th`).length;
+        const table = App.enhanceTable(selector, {
+            serverSide: true, processing: true, pageLength: 25, lengthMenu: [25, 50], searchDelay: 350,
+            order: [[0, 'asc']], columnDefs: [{ targets: columnCount - 1, orderable: false, searchable: false }],
+            buttons: [
+                ...['copy', 'csv', 'excel', 'print'].map((extend) => ({
+                    extend, text: `${extend.toUpperCase()} (หน้านี้)`,
+                    exportOptions: { columns: Array.from({ length: columnCount - 1 }, (_, i) => i), modifier: { page: 'current' } }
+                })),
+                { text: 'CSV ทั้งหมด', action: () => App.api('export', { query: { kind: resource } }).done((response) => {
+                    const rows = extraQuery.type ? response.data.filter((row) => row.type === extraQuery.type) : response.data;
+                    App.downloadCsv(`${resource}.csv`, rows);
+                }) }
+            ],
+            ajax: (request, callback) => {
+                App.api(resource, { query: {
+                    ...extraQuery, action: 'page', draw: request.draw, start: request.start, length: request.length,
+                    search_text: request.search.value, status: filterSelector ? $(filterSelector).val() : '',
+                    sort_column: request.order[0]?.column ?? 0, sort_direction: request.order[0]?.dir ?? 'asc'
+                } }).done((response) => {
+                    if (resource === 'documents' && response.counts) {
+                        ['proposal', 'draft', 'complete'].forEach((key) => $(`[data-doc-count="${key}"]`).text(response.counts[key] || 0));
+                    }
+                    const data = response.data.map((row) => $(renderRow(row)).children('td').map(function () { return this.innerHTML; }).get());
+                    callback({ ...response, data });
+                    if (!data.length && response.recordsFiltered > 0 && request.start >= response.recordsFiltered) {
+                        table.page('last').draw('page');
+                    }
+                }).fail(() => callback({ draw: request.draw, data: [], recordsTotal: 0, recordsFiltered: 0,
+                    error: 'โหลดข้อมูลไม่สำเร็จ กรุณาลองใหม่' }));
+            }
+        });
+        if (filterSelector) $(filterSelector).off('change').on('change', () => table.ajax.reload());
+    }
+
     function loadProjectsTable() {
-        App.api('projects').done(function (response) {
-            projects = response.data;
-            $('#projectStatusFilter').val('');
-            $('#projectsTable tbody').html(projects.map((row) => `
+        pagedAdminTable('#projectsTable', 'projects', (row) => `
                 <tr>
                     <td>${App.escapeHtml(row.code)}</td>
                     <td title="${App.escapeHtml(row.title)}"><strong>${App.escapeHtml(row.title)}</strong><span class="d-block text-muted">${App.escapeHtml(row.category)}</span></td>
@@ -228,8 +289,8 @@
                     <td data-search="${App.escapeHtml(row.status)}">${App.badge(row.status)}</td>
                     <td class="text-end">
                         <div class="row-actions" role="group" aria-label="จัดการโครงงาน">
-                            <a class="row-action view" href="${App.url(`admin/page.php?view=timeline&project=${row.id}`)}" title="ดูไทม์ไลน์" aria-label="ดูไทม์ไลน์"><i class="fa-solid fa-timeline"></i></a>
-                            <a class="row-action edit" href="${App.url(`admin/page.php?view=barcode&project=${row.id}`)}" title="ดูบาร์โค้ด" aria-label="ดูบาร์โค้ด"><i class="fa-solid fa-barcode"></i></a>
+                            <a class="row-action view" href="${App.escapeHtml(App.url(`admin/page.php?view=timeline&project=${encodeURIComponent(row.id)}`))}" title="ดูไทม์ไลน์" aria-label="ดูไทม์ไลน์"><i class="fa-solid fa-timeline"></i></a>
+                            <a class="row-action edit" href="${App.escapeHtml(App.url(`admin/page.php?view=barcode&project=${encodeURIComponent(row.id)}`))}" title="ดูบาร์โค้ด" aria-label="ดูบาร์โค้ด"><i class="fa-solid fa-barcode"></i></a>
                             ${row.status === 'Completed' && row.complete_approved
                                 ? '<button class="row-action approve" type="button" title="เสร็จสมบูรณ์แล้ว" aria-label="เสร็จสมบูรณ์แล้ว" disabled><i class="fa-solid fa-check"></i></button>'
                                 : row.complete_approved
@@ -237,46 +298,34 @@
                                     : '<button class="row-action approve" type="button" title="ต้องอนุมัติฉบับสมบูรณ์ก่อน" aria-label="ยังทำเป็นเสร็จสมบูรณ์ไม่ได้" disabled><i class="fa-solid fa-lock"></i></button>'}
                         </div>
                     </td>
-                </tr>`).join(''));
-            const table = App.enhanceTable('#projectsTable');
-            $('#projectStatusFilter').off('change').on('change', function () {
-                table.column(5).search($(this).val()).draw();
-            });
-        });
+                </tr>`, {}, '#projectStatusFilter');
     }
 
     function loadDocuments(type) {
-        $.when(loadLookups(), App.api('documents', { query: type ? { type } : {} })).done(function (_lookups, documentsResponse) {
-            const rows = documentsResponse[0].data || [];
-            const tableSelector = type ? '#documentStageTable' : '#documentsTable';
-            $(tableSelector + ' tbody').html(rows.map((row) => type ? `
+        const tableSelector = type ? '#documentStageTable' : '#documentsTable';
+        pagedAdminTable(tableSelector, 'documents', (row) => type ? `
                 <tr>
                     <td title="${App.escapeHtml(row.title)} — ${App.escapeHtml(row.filename)}"><strong>${App.escapeHtml(row.title)}</strong><span class="d-block text-muted">${App.escapeHtml(row.filename)}</span></td>
-                    <td title="${App.escapeHtml(studentName(row.student_id))}">${App.escapeHtml(studentName(row.student_id))}</td>
+                    <td title="${App.escapeHtml(row.student_name)}">${App.escapeHtml(row.student_name)}</td>
                     <td>${App.escapeHtml(row.size)}</td>
                     <td>${App.badge(row.status)}</td>
                     <td>${App.escapeHtml(row.uploaded_at)}</td>
                     <td class="text-end">
                         <div class="row-actions" role="group" aria-label="จัดการเอกสาร">
                             <button class="row-action view" data-action="preview-file" data-url="${App.url(`api/file.php?id=${encodeURIComponent(row.id)}`)}" title="ดูตัวอย่าง" aria-label="ดูตัวอย่าง"><i class="fa-solid fa-eye"></i></button>
-                            <button class="row-action delete" data-action="delete-document" data-id="${row.id}" title="ลบ" aria-label="ลบ"><i class="fa-solid fa-trash"></i></button>
+                            <button class="row-action delete" data-action="delete-document" data-id="${App.escapeHtml(row.id)}" title="ลบ" aria-label="ลบ"><i class="fa-solid fa-trash"></i></button>
                         </div>
                     </td>
                 </tr>` : `
                 <tr>
                     <td><strong>${App.escapeHtml(row.title)}</strong><span class="d-block text-muted">${App.escapeHtml(row.filename)}</span></td>
                     <td>${App.escapeHtml(row.type)}</td>
-                    <td>${App.escapeHtml(projectName(row.project_id))}</td>
+                    <td>${App.escapeHtml(row.project_title)}</td>
                     <td>${App.escapeHtml(row.size)}</td>
                     <td>${App.badge(row.status)}</td>
                     <td>${App.escapeHtml(row.uploaded_at)}</td>
                     <td class="text-end">${documentRow(row).match(/<td class="text-end">([\s\S]*)<\/td>/)?.[1] || ''}</td>
-                </tr>`).join(''));
-            App.enhanceTable(tableSelector);
-            if (!type) {
-                ['proposal', 'draft', 'complete'].forEach((key) => $(`[data-doc-count="${key}"]`).text(rows.filter((row) => row.type === key).length));
-            }
-        });
+                </tr>`, type ? { type } : {});
     }
 
     function initUpload() {
