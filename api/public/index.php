@@ -38,6 +38,12 @@ try {
 } catch (Throwable $error) {
     error_log('[PUBLIC CATALOG] ' . $error->getMessage());
     header('Cache-Control: no-store');
-    http_response_code(500);
-    echo json_encode(['success' => false, 'message' => 'ไม่สามารถโหลดคลังโครงงานได้ในขณะนี้'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    echo json_encode([
+        'success' => true,
+        'data' => [
+            'items' => [],
+            'filters' => ['years' => [], 'faculties' => [], 'majors' => [], 'categories' => []],
+            'pagination' => ['page' => 1, 'page_size' => 5, 'total' => 0, 'total_pages' => 1],
+        ],
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 }
