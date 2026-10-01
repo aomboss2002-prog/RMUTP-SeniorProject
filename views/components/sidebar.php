@@ -8,7 +8,7 @@
             <?php if ($key === 'dashboard'): ?><span class="sidebar-section-title">ภาพรวม</span><?php endif; ?>
             <?php if ($key === 'students'): ?><span class="sidebar-section-title">จัดการข้อมูล</span><?php endif; ?>
             <?php if ($key === 'notifications'): ?><span class="sidebar-section-title">ระบบ</span><?php endif; ?>
-            <a class="sidebar-link <?= $page === $key ? 'active' : '' ?>" href="<?= e(route_url($key)) ?>">
+            <a class="sidebar-link <?= ($page === $key || ($key === 'settings' && $page === 'system-health')) ? 'active' : '' ?>" href="<?= e(route_url($key)) ?>">
                 <i class="fa-solid <?= e($item['icon']) ?>"></i>
                 <span><?= e($item['label']) ?></span>
             </a>

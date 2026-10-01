@@ -21,8 +21,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 require_csrf_token();
 
 $user = $_SESSION['app_user'] ?? [];
-if (($user['role'] ?? '') !== 'student' || empty($user['id'])) {
-    blob_upload_response(['message' => 'Student authentication required.'], 401);
+if (!in_array($user['role'] ?? '', ['student', 'admin'], true) || empty($user['id'])) {
+    blob_upload_response(['message' => 'Authentication required.'], 401);
 }
 if (storage_driver() !== 'vercel_blob') {
     blob_upload_response(['message' => 'Direct Blob uploads are not enabled.'], 409);
@@ -39,6 +39,9 @@ $clientPayload = json_decode((string) ($payload['clientPayload'] ?? ''), true);
 if (!is_array($clientPayload)) $clientPayload = [];
 
 $kind = strtolower(trim((string) ($clientPayload['kind'] ?? '')));
+if (($user['role'] ?? '') === 'admin' && $kind !== 'document') {
+    blob_upload_response(['message' => 'Document uploads only.'], 403);
+}
 $namespace = $kind === 'profile' ? 'student' : strtolower(trim((string) ($clientPayload['stage'] ?? '')));
 $allowedNamespaces = $kind === 'profile' ? ['student'] : ['proposal', 'draft', 'complete'];
 if (!in_array($namespace, $allowedNamespaces, true)) {

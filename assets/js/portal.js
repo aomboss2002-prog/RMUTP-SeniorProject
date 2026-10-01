@@ -1,7 +1,7 @@
 (function ($) {
     'use strict';
 
-    const refreshMs = 30000;
+    const refreshMs = App.autoRefreshMs;
     const advisorStatusRefreshMs = 30000;
     let projectCache = null;
     let projectTitleCheckTimer = null;
@@ -1204,7 +1204,7 @@
         }
         // Unused initial data must not survive a later group/profile mutation.
         projectBootstrap = {};
-        setInterval(function () {
+        if (App.autoRefreshEnabled) setInterval(function () {
             if (document.visibilityState !== 'visible') return;
             if (currentPage === 'portal-dashboard') loadDashboard();
             if (currentPage === 'portal-notifications') loadNotifications();

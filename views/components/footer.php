@@ -1,5 +1,5 @@
 ﻿<footer class="app-footer">
-    <span>ระบบจัดการโครงงาน RMUTP</span>
+    <span><?= e((string) ($pageSystemSettings['system_name'] ?? 'ระบบจัดการโครงงาน RMUTP')) ?></span>
     <span>พร้อมใช้งานจริง</span>
 </footer>
 <?php

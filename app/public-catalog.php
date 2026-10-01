@@ -6,7 +6,7 @@ require_once __DIR__ . '/storage.php';
 function public_is_complete_document(array $document): bool
 {
     return strtolower(trim((string) ($document['type'] ?? ''))) === 'complete'
-        && in_array((string) ($document['status'] ?? ''), ['Approved', 'Completed'], true);
+        && in_array(strtolower(trim((string) ($document['status'] ?? ''))), ['approved', 'completed'], true);
 }
 
 function public_catalog_text(string $value): string
@@ -102,6 +102,14 @@ function public_completed_catalog(array $data, array $query = [], ?callable $fil
     $items = [];
     foreach ($latestByProject as $document) {
         $projectId = (string) ($document['project_id'] ?? '');
+        if ($projectId === '' && !empty($document['student_id'])) {
+            foreach ($projectsById as $candidateProject) {
+                if ((string) ($candidateProject['student_id'] ?? '') === (string) $document['student_id']) {
+                    $projectId = (string) ($candidateProject['id'] ?? '');
+                    break;
+                }
+            }
+        }
         $project = $projectsById[$projectId] ?? null;
         if (!$project || empty($document['id'])) continue;
 

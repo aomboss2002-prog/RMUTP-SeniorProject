@@ -1,7 +1,7 @@
 (function ($) {
     'use strict';
 
-    const refreshMs = 30000;
+    const refreshMs = App.autoRefreshMs;
     const apiBase = App.url('advisor-api.php?endpoint=');
     let advisorMessages = [];
     let advisorMessagePage = 1;
@@ -356,8 +356,16 @@
         });
     });
     $(document).on('click', '[data-action="advisor-preview"]', function () {
-        $('#pdfPreviewFrame').attr('src', $(this).data('url'));
-        bootstrap.Modal.getOrCreateInstance(document.getElementById('filePreviewModal')).show();
+        const frame = $('#pdfPreviewFrame');
+        const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('filePreviewModal'));
+        frame.attr('src', 'about:blank');
+        modal.show();
+        App.loadPdfPreview($(this).data('url')).then((previewUrl) => {
+            frame.attr('src', previewUrl);
+        }).catch(() => {
+            modal.hide();
+            App.toast('ไม่สามารถโหลดตัวอย่าง PDF ได้', 'error');
+        });
     });
     $(document).on('click', '[data-action="advisor-approve"],[data-action="advisor-reject"],[data-action="advisor-revision"]', function () {
         const action = $(this).data('action').replace('advisor-', '');
@@ -416,7 +424,7 @@
         if (current === 'advisor-calendar') loadCalendar();
         if (current === 'advisor-profile') loadProfile();
         if (current === 'advisor-reports') loadStudents('#advisorReportsTable', true);
-        setInterval(() => {
+        if (App.autoRefreshEnabled) setInterval(() => {
             if (document.visibilityState !== 'visible') return;
             if (current === 'advisor-dashboard') loadDashboard();
             if (current === 'advisor-messages') loadMessages();

@@ -4,6 +4,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/../app/store.php';
 require_once __DIR__ . '/../app/session.php';
 require_once __DIR__ . '/../app/storage.php';
+require_once __DIR__ . '/../app/file-range.php';
+require_once __DIR__ . '/../app/file-stream.php';
 require_once __DIR__ . '/../app/pdf-watermark.php';
 require_once __DIR__ . '/../app/public-catalog.php';
 start_app_session();
@@ -56,6 +58,16 @@ if (!$allowed) {
 
 $stage = basename((string) ($document['type'] ?? ''));
 $filename = basename((string) ($document['filename'] ?? ''));
+// Keep protected Complete downloads on the watermark path. Never redirect those
+// to the original Blob. Preview and other downloads stream after authorization.
+if (getenv('VERCEL') && storage_driver() === 'vercel_blob'
+    && !($isDownload && public_is_complete_document($document))) {
+    $ticket = file_stream_ticket(storage_blob_pathname($stage, $filename), $filename, $isDownload, storage_blob_token());
+    header('Cache-Control: private, no-store');
+    header('Referrer-Policy: no-referrer');
+    header('Location: /api/file-stream?ticket=' . rawurlencode($ticket), true, 307);
+    exit;
+}
 $sourceTemporary = false;
 try {
     $storedFile = storage_materialize($stage, $filename);
@@ -119,13 +131,47 @@ if ($isCompleteDownload) {
     ]);
 }
 
-header('Content-Length: ' . filesize($servePath));
+while (ob_get_level() > 0) {
+    ob_end_clean();
+}
+ini_set('zlib.output_compression', '0');
 header('Content-Disposition: ' . ($isDownload ? 'attachment' : 'inline') . '; filename="' . addcslashes($downloadFilename, '"\\') . '"');
 header('X-Content-Type-Options: nosniff');
+header('Accept-Ranges: bytes');
 header('Cache-Control: private, no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
 header('Expires: 0');
-readfile($servePath);
+$fileSize = (int) filesize($servePath);
+$rangeHeader = trim((string) ($_SERVER['HTTP_RANGE'] ?? ''));
+$range = file_response_range($fileSize, $rangeHeader);
+if ($range['status'] === 416) {
+    http_response_code(416);
+    header('Content-Range: bytes */' . $fileSize);
+    exit;
+}
+$start = $range['start'];
+$length = $range['length'];
+$end = $start + $length - 1;
+if ($range['status'] === 206) {
+    http_response_code(206);
+    header('Content-Range: bytes ' . $start . '-' . $end . '/' . $fileSize);
+}
+header('Content-Length: ' . $length);
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'HEAD') exit;
+$handle = fopen($servePath, 'rb');
+if ($handle === false || fseek($handle, $start) !== 0) {
+    if (is_resource($handle)) fclose($handle);
+    http_response_code(500);
+    exit('Unable to read file.');
+}
+$remaining = $length;
+while ($remaining > 0 && !feof($handle)) {
+    $chunk = fread($handle, min(65536, $remaining));
+    if ($chunk === false || $chunk === '') break;
+    echo $chunk;
+    $remaining -= strlen($chunk);
+}
+fclose($handle);
 if ($temporaryPath && is_file($temporaryPath)) {
     unlink($temporaryPath);
 }

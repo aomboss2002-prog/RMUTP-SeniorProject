@@ -118,6 +118,7 @@ function page_uses_blob_upload(string $page): bool
 {
     return in_array($page, [
         'portal-profile', 'portal-proposal', 'portal-draft', 'portal-complete',
+        'proposal', 'draft', 'complete',
     ], true);
 }
 
@@ -165,7 +166,6 @@ function sidebar_items(): array
         'documents' => ['label' => 'เอกสาร', 'icon' => 'fa-folder-open'],
         'reports' => ['label' => 'รายงาน', 'icon' => 'fa-chart-column'],
         'notifications' => ['label' => 'การแจ้งเตือน', 'icon' => 'fa-bell'],
-        'system-health' => ['label' => 'สถานะระบบ', 'icon' => 'fa-heart-pulse'],
         'settings' => ['label' => 'ตั้งค่า', 'icon' => 'fa-gear'],
     ];
 }

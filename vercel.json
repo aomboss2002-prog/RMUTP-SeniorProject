@@ -7,12 +7,16 @@
     }
   ],
   "functions": {
+    "api/file-stream.mjs": {
+      "maxDuration": 60
+    },
     "api/vercel.php": {
       "runtime": "vercel-php@0.9.0",
       "maxDuration": 60
     }
   },
   "routes": [
+    { "src": "/api/file-stream", "dest": "/api/file-stream.mjs" },
     {
       "src": "/assets/(vendor|css|js)/(.*)",
       "headers": { "Cache-Control": "public, max-age=31536000, immutable" },

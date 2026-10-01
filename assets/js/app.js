@@ -21,6 +21,7 @@
             ajaxOptions.data = options.formData;
             ajaxOptions.processData = false;
             ajaxOptions.contentType = false;
+            if (typeof options.xhr === 'function') ajaxOptions.xhr = options.xhr;
         } else if (options.data) {
             ajaxOptions.data = JSON.stringify(options.data);
             ajaxOptions.contentType = 'application/json';
@@ -34,7 +35,7 @@
         if (isGet) ajaxOptions.timeout = 30000;
 
         const request = $.ajax(ajaxOptions).fail(function (xhr, status) {
-            if (status === 'abort') return;
+            if (status === 'abort' || options.silentErrors) return;
             const response = xhr.responseJSON || {};
             toast(response.message || 'ไม่สามารถเชื่อมต่อ API ได้', 'error');
         });
@@ -81,6 +82,39 @@
             cancelButtonColor: '#64748B',
             confirmButtonText: 'Confirm'
         });
+    }
+
+    let pdfPreviewObjectUrl = null;
+
+    async function loadPdfPreview(url) {
+        const chunkSize = 1024 * 1024;
+        let start = 0;
+        let totalSize = null;
+        const chunks = [];
+
+        while (totalSize === null || start < totalSize) {
+            const response = await fetch(url, {
+                credentials: 'same-origin',
+                headers: { Range: `bytes=${start}-${start + chunkSize - 1}` }
+            });
+            if (!response.ok && response.status !== 206) {
+                throw new Error(`PDF request failed (${response.status})`);
+            }
+            const contentRange = response.headers.get('Content-Range') || '';
+            const rangeMatch = contentRange.match(/bytes\s+\d+-\d+\/(\d+)/i);
+            const chunk = await response.arrayBuffer();
+            chunks.push(chunk);
+            if (response.status !== 206 || !rangeMatch) {
+                break;
+            }
+            totalSize = Number(rangeMatch[1]);
+            start += chunk.byteLength;
+            if (chunk.byteLength === 0) throw new Error('Empty PDF response');
+        }
+
+        if (pdfPreviewObjectUrl) URL.revokeObjectURL(pdfPreviewObjectUrl);
+        pdfPreviewObjectUrl = URL.createObjectURL(new Blob(chunks, { type: 'application/pdf' }));
+        return pdfPreviewObjectUrl;
     }
 
     function badge(status) {
@@ -332,8 +366,14 @@
 
         $(document).on('click', '[data-action="preview-file"]', function () {
             const url = $(this).data('url');
-            $('#pdfPreviewFrame').attr('src', url || '');
-            bootstrap.Modal.getOrCreateInstance(document.getElementById('filePreviewModal')).show();
+            const frame = $('#pdfPreviewFrame');
+            const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('filePreviewModal'));
+            frame.attr('src', 'about:blank');
+            modal.show();
+            loadPdfPreview(url).then((previewUrl) => frame.attr('src', previewUrl)).catch(() => {
+                modal.hide();
+                toast('ไม่สามารถโหลดตัวอย่าง PDF ได้', 'error');
+            });
         });
     }
 
@@ -347,9 +387,12 @@
         toast,
         confirmAction,
         showLoader,
+        loadPdfPreview,
         downloadCsv,
         url,
-        state
+        state,
+        autoRefreshEnabled: document.querySelector('meta[name="notifications-enabled"]')?.content !== 'false',
+        autoRefreshMs: Math.max(10000, Math.min(300000, Number(document.querySelector('meta[name="notification-refresh"]')?.content) || 30000))
     };
 
     $(function () {
@@ -357,12 +400,12 @@
         $(document).ajaxSend(function (_event, _xhr, options) {
             if ((options.type || 'GET').toUpperCase() === 'GET') return;
             activeMutations += 1;
-            $('button[type="submit"]').prop('disabled', true);
+            $('button[type="submit"]').not('#settingsForm button').prop('disabled', true);
         });
         $(document).ajaxComplete(function (_event, _xhr, options) {
             if ((options.type || 'GET').toUpperCase() === 'GET') return;
             activeMutations = Math.max(0, activeMutations - 1);
-            $('button[type="submit"]').prop('disabled', activeMutations > 0);
+            $('button[type="submit"]').not('#settingsForm button').prop('disabled', activeMutations > 0);
         });
         initLayout();
         initGlobalActions();

@@ -9,11 +9,16 @@
     <div id="dashboardSearchResults" class="search-results"></div>
 </div>
 
-<section class="summary-grid" id="dashboardSummary">
-    <article class="summary-card"><span>นักศึกษา</span><strong data-summary="students">0</strong><i class="fa-solid fa-user-graduate"></i></article>
-    <article class="summary-card"><span>อาจารย์ที่ปรึกษา</span><strong data-summary="advisors">0</strong><i class="fa-solid fa-chalkboard-user"></i></article>
-    <article class="summary-card"><span>โครงงาน</span><strong data-summary="projects">0</strong><i class="fa-solid fa-diagram-project"></i></article>
-    <article class="summary-card warning"><span>รอดำเนินการ</span><strong data-summary="pending">0</strong><i class="fa-solid fa-hourglass-half"></i></article>
+<section id="dashboardSummary" aria-label="สถิติผู้ใช้และโครงงาน" aria-busy="true">
+    <div class="dashboard-summary-heading"><h2>ภาพรวมการใช้งาน</h2><small id="dashboardUpdateStatus" role="status" aria-live="polite">กำลังโหลดข้อมูล…</small></div>
+    <div class="summary-grid dashboard-metrics">
+        <article class="summary-card metric-total"><span>ผู้ใช้ทั้งหมด</span><div class="metric-value"><strong data-summary="users">—</strong><small>คน</small></div><small>นักศึกษาและอาจารย์ ไม่รวมผู้ดูแล</small><i class="fa-solid fa-users" aria-hidden="true"></i></article>
+        <article class="summary-card"><span>นักศึกษา</span><div class="metric-value"><strong data-summary="students">—</strong><small>คน</small></div><small>นักศึกษาทั้งหมดในระบบ</small><i class="fa-solid fa-user-graduate" aria-hidden="true"></i></article>
+        <article class="summary-card"><span>อาจารย์</span><div class="metric-value"><strong data-summary="advisors">—</strong><small>คน</small></div><small>อาจารย์ทั้งหมดในระบบ</small><i class="fa-solid fa-chalkboard-user" aria-hidden="true"></i></article>
+        <article class="summary-card metric-project metric-total"><span>โครงงานทั้งหมด</span><div class="metric-value"><strong data-summary="projects">—</strong><small>โครงงาน</small></div><small>ทุกสถานะในระบบ</small><i class="fa-solid fa-diagram-project" aria-hidden="true"></i></article>
+        <article class="summary-card metric-project warning"><span>อยู่ระหว่างดำเนินการ</span><div class="metric-value"><strong data-summary="in_progress">—</strong><small>โครงงาน</small></div><small>รวมรอดำเนินการ</small><i class="fa-solid fa-hourglass-half" aria-hidden="true"></i></article>
+        <article class="summary-card metric-project metric-completed"><span>เสร็จสมบูรณ์</span><div class="metric-value"><strong data-summary="completed">—</strong><small>โครงงาน</small></div><small>ดำเนินโครงงานเสร็จแล้ว</small><i class="fa-solid fa-circle-check" aria-hidden="true"></i></article>
+    </div>
 </section>
 
 <section class="row g-4">
@@ -23,7 +28,10 @@
                 <h2>สถานะโครงงาน</h2>
                 <button class="icon-btn" data-action="refresh-dashboard" aria-label="รีเฟรชแดชบอร์ด"><i class="fa-solid fa-rotate"></i></button>
             </div>
-            <div class="card-body chart-box"><canvas id="projectStatusChart"></canvas></div>
+            <div class="card-body">
+                <div class="chart-box"><canvas id="projectStatusChart" role="img" aria-label="สัดส่วนโครงงานแยกตามสถานะ ดูจำนวนในรายการด้านล่าง" aria-describedby="projectStatusLegend"></canvas></div>
+                <ul id="projectStatusLegend" class="project-status-legend" aria-label="จำนวนโครงงานแต่ละสถานะ"><li>กำลังโหลดข้อมูล…</li></ul>
+            </div>
         </div>
     </div>
     <div class="col-xl-5">

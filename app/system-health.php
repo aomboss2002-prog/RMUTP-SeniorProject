@@ -4,6 +4,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/store.php';
 require_once __DIR__ . '/storage.php';
 require_once __DIR__ . '/mailer.php';
+require_once __DIR__ . '/mail-diagnostics.php';
+require_once __DIR__ . '/website-monitor.php';
 
 function system_health_table_exists(PDO $pdo, string $table): bool
 {
@@ -37,8 +39,16 @@ function system_health_snapshot(): array
         $pdo = database_connection();
         $connected = (int) $pdo->query('SELECT 1')->fetchColumn() === 1;
         $latency = round((microtime(true) - $dbStarted) * 1000, 1);
-        $schemaReady = system_health_table_exists($pdo, 'project_title_checks') && system_health_table_exists($pdo, 'project_risk_scores');
+        $missingTables = array_values(array_filter(
+            ['project_title_checks', 'project_risk_scores'],
+            static fn(string $table): bool => !system_health_table_exists($pdo, $table)
+        ));
+        $schemaReady = $missingTables === [];
         $services['database'] = system_health_state($connected && $schemaReady ? 'healthy' : 'degraded', $connected && $schemaReady ? 'พร้อมใช้งาน' : 'ควรตรวจสอบ', $schemaReady ? 'เชื่อมต่อฐานข้อมูลและโครงสร้างหลักพร้อมใช้งาน' : 'เชื่อมต่อได้ แต่โครงสร้างบางส่วนยังไม่ครบ', ['metric' => $latency . ' ms', 'latency_ms' => $latency, 'schema_ready' => $schemaReady]);
+        $services['database']['missing_tables'] = $missingTables;
+        if (!$schemaReady) {
+            $services['database']['message'] = 'ขาดตาราง: ' . implode(', ', $missingTables);
+        }
     } catch (Throwable $error) {
         error_log('[SYSTEM HEALTH] database: ' . $error->getMessage());
         $services['database'] = system_health_state('critical', 'เชื่อมต่อไม่ได้', 'กรุณาตรวจสอบบริการฐานข้อมูลและ Environment Variables', ['metric' => 'ไม่พร้อม', 'latency_ms' => null, 'schema_ready' => false]);
@@ -56,13 +66,9 @@ function system_health_snapshot(): array
     }
 
     $transport = mailer_transport();
-    $mailRequired = $transport === 'smtp' ? ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USERNAME', 'SMTP_PASSWORD', 'MAIL_FROM'] : ($transport === 'resend' ? ['RESEND_API_KEY', 'MAIL_FROM'] : []);
-    $mailConfigured = $transport === 'log';
-    if (!$mailConfigured) {
-        $mailConfigured = true;
-        foreach ($mailRequired as $key) if (trim((string) ($config[$key] ?? '')) === '') $mailConfigured = false;
-    }
-    $services['email'] = system_health_state($mailConfigured ? 'healthy' : 'degraded', $mailConfigured ? 'ตั้งค่าแล้ว' : 'ต้องตั้งค่า', $mailConfigured ? 'ระบบส่งอีเมลพร้อมสำหรับข้อความทดสอบ' : 'กรุณากำหนดค่าผู้ให้บริการอีเมลให้ครบ', ['metric' => strtoupper($transport), 'transport' => $transport, 'sender' => system_health_mask_email((string) ($config['MAIL_FROM'] ?? ''))]);
+    $mailIssue = mail_configuration_issue($config, $transport);
+    $mailConfigured = $mailIssue === null;
+    $services['email'] = system_health_state($transport === 'log' ? 'disabled' : ($mailConfigured ? 'healthy' : 'degraded'), $transport === 'log' ? 'โหมดทดสอบ ไม่ส่งจริง' : ($mailConfigured ? 'ตั้งค่าแล้ว' : 'ต้องตั้งค่า'), $mailIssue['message'] ?? ($transport === 'log' ? 'บันทึกข้อความลง Log เท่านั้น ไม่มีอีเมลส่งออก' : 'ค่าตั้งค่าผ่านการตรวจเบื้องต้น ยังไม่ได้ยืนยันการส่งจริง'), ['metric' => strtoupper($transport), 'transport' => $transport, 'sender' => system_health_mask_email((string) ($config['MAIL_FROM'] ?? ''))]);
 
     $titleCounts = ['queued' => 0, 'processing' => 0, 'completed' => 0, 'failed' => 0];
     $latestTitle = null;
@@ -78,7 +84,15 @@ function system_health_snapshot(): array
             if (system_health_table_exists($pdo, 'project_risk_scores')) $latestRisk = $pdo->query('SELECT MAX(calculated_at) FROM project_risk_scores')->fetchColumn() ?: null;
         } catch (Throwable $error) { error_log('[SYSTEM HEALTH] ai: ' . $error->getMessage()); }
     }
-    $aiEnabled = ai_web_processing_enabled() || filter_var((string) ($config['AI_RISK_ENABLED'] ?? 'true'), FILTER_VALIDATE_BOOLEAN);
+    $aiTitleEnabled = $aiRiskEnabled = true;
+    if ($pdo instanceof PDO) {
+        try {
+            $aiTitleEnabled = system_setting_enabled('ai_title_enabled');
+            $aiRiskEnabled = system_setting_enabled('ai_risk_enabled');
+        } catch (Throwable) { /* Database service already reports connection errors. */ }
+    }
+    $aiEnabled = (ai_web_processing_enabled() && $aiTitleEnabled)
+        || (filter_var((string) ($config['AI_RISK_ENABLED'] ?? 'true'), FILTER_VALIDATE_BOOLEAN) && $aiRiskEnabled);
     $aiFailed = $titleCounts['failed'];
     $services['ai'] = system_health_state(!$aiEnabled ? 'disabled' : ($aiFailed > 0 ? 'degraded' : 'healthy'), !$aiEnabled ? 'ปิดใช้งาน' : ($aiFailed > 0 ? 'มีงานล้มเหลว' : 'ทำงานปกติ'), !$aiEnabled ? 'เปิด AI_WEB_PROCESSING_ENABLED เมื่อต้องการประมวลผลบนเว็บ' : 'ตรวจชื่อซ้ำและ Risk Score พร้อมประมวลผล', ['metric' => ($titleCounts['queued'] + $titleCounts['processing']) . ' งานรอ', 'enabled' => $aiEnabled, 'title_engine' => (string) ($config['AI_TITLE_ENGINE'] ?? 'auto'), 'title_model' => (string) ($config['AI_OLLAMA_MODEL'] ?? 'bge-m3'), 'queue' => $titleCounts, 'latest_completion' => $latestTitle, 'risk_latest' => $latestRisk]);
 
@@ -92,9 +106,14 @@ function system_health_snapshot(): array
     $cronStatus = !$last ? 'unknown' : (($last['status'] ?? '') === 'success' ? 'healthy' : (($last['status'] ?? '') === 'started' ? 'degraded' : 'critical'));
     $services['cron'] = system_health_state($cronStatus, !$last ? 'ยังไม่เคยทำงาน' : (($last['status'] ?? '') === 'success' ? 'ล่าสุดสำเร็จ' : 'ควรตรวจสอบ'), !$last ? 'ประวัติจะปรากฏหลัง Scheduled worker ทำงานครั้งแรก' : 'ประวัติการทำงานถูกบันทึกโดยไม่เก็บข้อมูลลับ', ['metric' => !$last ? 'รอการทำงาน' : (($last['duration_ms'] ?? null) !== null ? ((int) $last['duration_ms']) . ' ms' : 'กำลังทำงาน'), 'schedule_utc' => '02:00 UTC ทุกวัน', 'schedule_th' => '09:00 น. ประเทศไทย', 'last_run' => $last, 'history' => $history]);
 
+    $website = website_monitor_unavailable();
+    if ($pdo instanceof PDO) {
+        try { $website = website_monitor_snapshot($pdo); }
+        catch (Throwable) { error_log('[SYSTEM HEALTH] website: WEBSITE_DATA_UNAVAILABLE'); }
+    }
     $states = array_column($services, 'status');
     $overall = in_array('critical', $states, true) ? 'critical' : (count(array_intersect($states, ['degraded', 'unknown', 'disabled'])) > 0 ? 'degraded' : 'healthy');
-    return ['overall' => ['status' => $overall, 'label' => $overall === 'healthy' ? 'ระบบพร้อมใช้งาน' : ($overall === 'critical' ? 'พบระบบสำคัญขัดข้อง' : 'ระบบทำงานได้ แต่ควรตรวจสอบ'), 'response_ms' => round((microtime(true) - $started) * 1000, 1)], 'services' => $services, 'checked_at' => $checkedAt];
+    return ['overall' => ['status' => $overall, 'label' => $overall === 'healthy' ? 'ระบบพร้อมใช้งาน' : ($overall === 'critical' ? 'พบระบบสำคัญขัดข้อง' : 'ระบบทำงานได้ แต่ควรตรวจสอบ'), 'response_ms' => round((microtime(true) - $started) * 1000, 1)], 'services' => $services, 'website' => $website, 'checked_at' => $checkedAt];
 }
 
 function system_health_storage_probe(): array

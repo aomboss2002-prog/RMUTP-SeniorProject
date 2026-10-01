@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
+const source = readFileSync('assets/js/dashboard.js', 'utf8');
+const context = vm.createContext({});
+vm.runInContext(source.slice(source.indexOf('    function dashboardSummary('), source.indexOf('    function renderList(')), context);
+const summary = data => JSON.parse(JSON.stringify(context.dashboardSummary(data)));
+const old = { summary: { students: 25, advisors: 9, projects: 15, pending: 13 }, project_status: { Completed: 2, Pending: 13 } };
+assert.deepEqual(summary(old), { ...old.summary, users: 34, completed: 2, in_progress: 13 });
+assert.equal(old.summary.users, undefined, 'Do not mutate API data');
+const current = { ...old, summary: { ...old.summary, users: 34, completed: 2, in_progress: 13 } };
+assert.deepEqual(summary(current), current.summary);
+assert.deepEqual(summary({ summary: { students: 0, advisors: 0, projects: 0 }, project_status: {} }), { students: 0, advisors: 0, projects: 0, users: 0, completed: 0, in_progress: 0 });
+assert.equal(summary({ summary: { projects: 4 }, project_status: { Pending: 4 } }).in_progress, 4);
+assert.equal(summary({}).users, undefined, 'Missing data is not a false zero');
+assert.equal(summary({ summary: { students: null, advisors: 9 } }).users, undefined);
+assert.equal(summary({ summary: { projects: 1 }, project_status: { Completed: 2 } }).in_progress, undefined, 'Do not show negative counts');
+console.log('DASHBOARD_SUMMARY_OK: old/new API, screenshot values 34/13/2, empty and missing data');

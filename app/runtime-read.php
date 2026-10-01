@@ -25,7 +25,8 @@ function runtime_read_collections(PDO $pdo, array $collections): array
     $select = [];
     foreach ($collections as $name) {
         if (!in_array($name, $allowed, true)) throw new InvalidArgumentException('Unsupported runtime collection');
-        $select[] = "JSON_EXTRACT(state_json, '$.{$name}') AS {$name}";
+        // Quote allowlisted aliases: GROUPS is reserved in MySQL 8.
+        $select[] = "JSON_EXTRACT(state_json, '$.{$name}') AS `{$name}`";
     }
     if (!$select) return [];
     $row = $pdo->query('SELECT ' . implode(', ', $select) . " FROM app_state WHERE state_key='runtime' LIMIT 1")->fetch(PDO::FETCH_ASSOC);

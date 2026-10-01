@@ -27,6 +27,20 @@ if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) {
     exit(0);
 }
 
+// Do not announce readiness or claim jobs while the database is unavailable.
+do {
+    try {
+        database_connection()->query('SELECT 1');
+        break;
+    } catch (Throwable $error) {
+        fwrite(STDERR, "[AI WORKER NOT READY] Database unavailable (code=" . $error->getCode()
+            . "). Start MySQL in XAMPP and check .env. No AI jobs processed.\n");
+        if (!$watch) exit(1);
+        fwrite(STDERR, "Waiting 30 seconds before checking again. Ctrl+C to stop.\n");
+        sleep(30);
+    }
+} while ($watch);
+
 if (!$quiet) fwrite(STDOUT, 'AI background worker ready (title=' . ai_title_config('AI_TITLE_ENGINE', 'auto')
     . ', risk=' . ($riskEnabled ? 'enabled' : 'disabled') . ").\n");
 $nextRiskScanAt = 0;

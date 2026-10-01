@@ -148,7 +148,9 @@ function send_email_via_smtp(
             throw new RuntimeException('Unable to send the SMTP message body.');
         }
         smtp_read_response($socket, [250]);
-        smtp_command($socket, 'QUIT', [221]);
+        // A 250 after DATA means delivery was accepted. A disconnect during QUIT
+        // must not report failure and encourage duplicate sends.
+        try { smtp_command($socket, 'QUIT', [221]); } catch (Throwable) {}
         return ['id' => $deliveryId, 'transport' => 'smtp'];
     } finally {
         fclose($socket);
@@ -193,7 +195,7 @@ function send_system_email(string $recipient, string $subject, string $html, str
     $response = curl_exec($handle);
     $status = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
     unset($handle);
-    if ($response === false || $status < 200 || $status >= 300) throw new RuntimeException('Email provider rejected the test message.');
+    if ($response === false || $status < 200 || $status >= 300) throw new RuntimeException('Email provider rejected the test message.', $status);
     $decoded = json_decode((string) $response, true);
     return ['id' => (string) (($decoded['id'] ?? '') ?: 'accepted'), 'transport' => 'resend'];
 }

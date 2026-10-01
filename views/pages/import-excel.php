@@ -21,6 +21,7 @@
             <div class="card-header clean-header import-preview-header">
                 <div class="import-preview-heading">
                     <h2>รายชื่อที่ยังไม่มีในระบบ</h2>
+                    <p class="text-muted mb-2">สถานะตั้งต้นทุกคนเป็น “กำลังศึกษา” สามารถเปลี่ยนสถานะรายคนก่อนยืนยันนำเข้าได้</p>
                     <div class="import-reconcile-summary is-idle" id="importReconcileSummary" role="status" aria-live="polite">
                         <span>เลือกไฟล์เพื่อเปรียบเทียบกับฐานข้อมูล</span>
                     </div>
@@ -28,7 +29,7 @@
             </div>
             <div class="table-responsive import-preview-table-wrap" tabindex="0" aria-label="ตารางตรวจสอบรายชื่อนักศึกษา เลื่อนในแนวนอนได้">
                 <table class="table align-middle datatable" id="importPreviewTable">
-                    <thead><tr><th>รหัส</th><th>ชื่อ-นามสกุล</th><th>อีเมล</th><th>เบอร์โทร (ไม่บังคับ)</th><th>ชั้นปี</th><th>สถานะ</th></tr></thead>
+                    <thead><tr><th>รหัส</th><th>ชื่อ-นามสกุล</th><th>อีเมล</th><th>เบอร์โทร (ไม่บังคับ)</th><th>ชั้นปี</th><th>สถานะนักศึกษา</th></tr></thead>
                     <tbody></tbody>
                 </table>
             </div>

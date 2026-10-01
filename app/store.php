@@ -2,6 +2,7 @@
 
 date_default_timezone_set('Asia/Bangkok');
 require_once __DIR__ . '/project-tracking.php';
+require_once __DIR__ . '/settings.php';
 
 function app_data_path(): string
 {
@@ -675,7 +676,7 @@ function sync_student_to_database(array $student): void
         'year_level' => (int) ($student['year_level'] ?? 4),
         'advisor_id' => ($student['advisor_id'] ?? '') ?: null,
         'project_id' => ($student['project_id'] ?? '') ?: null,
-        'status' => $student['status'] ?? 'Pending',
+        'status' => $student['status'] ?? 'Active',
         'photo' => $student['photo'] ?? 'assets/img/profile-student.svg',
     ]);
 }
@@ -823,16 +824,7 @@ function app_faculties(): array
 function app_majors(): array
 {
     return [
-        'บช.บ. บัญชีบัณฑิต (ได้รับการรับรองจากสภาวิชาชีพบัญชี)',
-        'บธ.บ. สาขาวิชาการจัดการ',
-        'บธ.บ. สาขาวิชาการจัดการโลจิสติกส์และโซ่อุปทาน',
-        'บธ.บ. สาขาวิชาการตลาด',
-        'บธ.บ. สาขาวิชานวัตกรรมทางการเงินและการลงทุน',
         'บธ.บ. สาขาวิชาระบบสารสนเทศและนวัตกรรมดิจิทัล',
-        'บธ.บ. สาขาวิชาการจัดการธุรกิจระหว่างประเทศ (หลักสูตรนานาชาติ)',
-        'วท.บ. สาขาวิชาการวิเคราะห์ข้อมูลทางธุรกิจ',
-        'บธ.บ. สาขาวิชาการเป็นผู้ประกอบการ',
-        'บธ.บ. สาขาวิชานวัตกรรมธุรกิจบริการยั่งยืน',
     ];
 }
 
@@ -849,7 +841,8 @@ function normalize_faculty_data(array $data): array
                 $data[$collection][$index]['faculty'] = $faculties[0];
             }
             $academicField = $collection === 'students' ? 'major' : 'department';
-            if (!in_array($row[$academicField] ?? '', $majors, true)) {
+            // Restrict new choices without silently reassigning existing people to another major.
+            if (trim((string) ($row[$academicField] ?? '')) === '') {
                 $data[$collection][$index][$academicField] = $majors[0];
             }
         }

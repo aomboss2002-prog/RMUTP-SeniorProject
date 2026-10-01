@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS students (
     year_level INT DEFAULT 4,
     advisor_id VARCHAR(20),
     project_id VARCHAR(20),
-    status VARCHAR(40) DEFAULT 'Pending',
+    status VARCHAR(40) DEFAULT 'Active',
     photo VARCHAR(255) DEFAULT 'assets/img/profile-student.svg',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_students_advisor (advisor_id),

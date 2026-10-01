@@ -1,6 +1,7 @@
 <?php page_header('โครงงาน', 'ตรวจสอบความคืบหน้า สถานะอนุมัติ อาจารย์ที่ปรึกษา และลิงก์บาร์โค้ด/ไทม์ไลน์', [
     ['label' => 'บาร์โค้ด', 'href' => route_url('barcode'), 'icon' => 'fa-barcode', 'class' => 'btn btn-outline-primary'],
 ]); ?>
+<div id="projectDeletionJobs" class="alert alert-warning d-none" role="status" aria-live="polite"></div>
 <div class="card">
     <div class="card-header clean-header">
         <h2>โครงงาน</h2>

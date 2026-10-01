@@ -15,8 +15,14 @@ function student_list_query(array $input): array
     $conditions = [];
     $parameters = [];
     if ($status !== '') {
-        $conditions[] = 's.status = ?';
-        $parameters[] = $status;
+        if ($status === 'Active') {
+            // Legacy workflow labels on student records mean an ongoing student,
+            // not a pending account. Do not modify the project's own status.
+            $conditions[] = "(s.status IN ('Active', 'Pending', 'Draft', 'Review', 'Approved', 'New', '') OR s.status IS NULL)";
+        } else {
+            $conditions[] = 's.status = ?';
+            $parameters[] = $status;
+        }
     }
     if ($search !== '') {
         // Treat %, _ and the escape character as literal search text.

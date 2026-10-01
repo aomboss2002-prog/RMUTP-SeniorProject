@@ -20,6 +20,7 @@ function queue_project_title_check(string $projectId, string $title): ?array
     $projectId = trim($projectId);
     $title = trim($title);
     if ($projectId === '' || $title === '') return null;
+    if (!system_setting_enabled('ai_title_enabled')) return null;
 
     $pdo = database_connection();
     $ownsTransaction = !$pdo->inTransaction();
@@ -123,6 +124,7 @@ function latest_project_title_check(string $projectId, ?int $jobId = null): ?arr
 
 function claim_project_title_check_job(): ?array
 {
+    if (!system_setting_enabled('ai_title_enabled')) return null;
     $pdo = database_connection();
     $pdo->beginTransaction();
     try {

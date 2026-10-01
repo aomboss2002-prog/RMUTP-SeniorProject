@@ -1,6 +1,28 @@
 (function ($) {
     'use strict';
 
+    let dashboardLoading = false;
+    let dashboardUpdatedAt = null;
+    const statusColors = ['#0B3C8C', '#F4C542', '#0F7C9F', '#168A4A', '#64748B'];
+    const formatCount = (value) => Number(value).toLocaleString('th-TH');
+
+    function dashboardSummary(data) {
+        const summary = { ...(data.summary || {}) };
+        const count = value => value !== null && value !== undefined && value !== ''
+            && Number.isSafeInteger(Number(value)) && Number(value) >= 0 ? Number(value) : null;
+        const students = count(summary.students);
+        const advisors = count(summary.advisors);
+        const projects = count(summary.projects);
+        // Support older API responses without treating unavailable values as zero.
+        if (count(summary.users) === null && students !== null && advisors !== null) summary.users = students + advisors;
+        if (count(summary.completed) === null && data.project_status && typeof data.project_status === 'object') {
+            summary.completed = Object.hasOwn(data.project_status, 'Completed') ? count(data.project_status.Completed) : 0;
+        }
+        const completed = count(summary.completed);
+        if (count(summary.in_progress) === null && projects !== null && completed !== null && completed <= projects) summary.in_progress = projects - completed;
+        return summary;
+    }
+
     function renderList(selector, rows, renderer) {
         $(selector).html(rows.map(renderer).join('') || '<div class="list-group-item text-muted">ไม่มีข้อมูล</div>');
     }
@@ -23,7 +45,7 @@
             $chartBox.append(`
                 <div class="dashboard-empty-state" role="status">
                     <i class="fa-solid fa-chart-simple" aria-hidden="true"></i>
-                    <strong>ยังไม่มีข้อมูลสำหรับแสดงผล</strong>
+                    <strong>${id === 'projectStatusChart' ? 'ยังไม่มีโครงงานในระบบ' : 'ยังไม่มีข้อมูลสำหรับแสดงผล'}</strong>
                     <span>กราฟจะอัปเดตเมื่อมีข้อมูลในระบบ</span>
                 </div>`);
             return;
@@ -89,13 +111,24 @@
     }
 
     function loadDashboard() {
+        if (dashboardLoading) return;
+        dashboardLoading = true;
+        $('[data-action="refresh-dashboard"]').prop('disabled', true);
+        $('#dashboardSummary, #riskOverviewCard').attr('aria-busy', 'true');
+        $('#dashboardUpdateStatus').removeClass('text-danger').text(dashboardUpdatedAt ? 'กำลังอัปเดตข้อมูล…' : 'กำลังโหลดข้อมูล…');
         App.showLoader(true);
-        App.api('dashboard').done(function (response) {
+        App.api('dashboard', { silentErrors: true }).done(function (response) {
             const data = response.data;
-            Object.keys(data.summary).forEach((key) => $(`[data-summary="${key}"]`).text(data.summary[key]));
+            const summary = dashboardSummary(data);
+            ['users', 'students', 'advisors', 'projects', 'in_progress', 'completed'].forEach((key) => {
+                const value = summary[key];
+                $(`[data-summary="${key}"]`).text(value === null || value === undefined ? '—' : formatCount(value));
+            });
 
             const statuses = data.project_status || {};
-            chart('projectStatusChart', 'doughnut', Object.keys(statuses).map(App.label), Object.values(statuses), ['#0B3C8C', '#F4C542', '#0F7C9F', '#168A4A', '#64748B']);
+            chart('projectStatusChart', 'doughnut', Object.keys(statuses).map(App.label), Object.values(statuses), statusColors, false);
+            $('#projectStatusLegend').html(Object.entries(statuses).map(([status, count], index) => `
+                <li><span><i aria-hidden="true" style="background:${statusColors[index % statusColors.length]}"></i>${App.escapeHtml(App.label(status))}</span><strong>${formatCount(count)} <small>โครงงาน</small></strong></li>`).join('') || '<li>ยังไม่มีโครงงานในระบบ</li>');
 
             const uploads = data.uploads || {};
             chart('uploadChart', 'bar', Object.keys(uploads).map(App.label), Object.values(uploads), ['#0B3C8C', '#F4C542', '#168A4A']);
@@ -114,6 +147,12 @@
                     <span class="d-block text-muted">${App.escapeHtml(row.message)}</span>
                 </a>`);
 
+            // Destroy before replacing rows; DataTables otherwise restores stale cached rows.
+            ['#latestFilesTable', '#pendingApprovalsTable'].forEach((selector) => {
+                if ($.fn.DataTable && $.fn.DataTable.isDataTable($(selector))) {
+                    $(selector).DataTable().destroy();
+                }
+            });
             $('#latestFilesTable tbody').html(data.files.map((row) => `
                 <tr><td>${App.escapeHtml(row.title)}</td><td>${App.escapeHtml(App.label(row.type))}</td><td>${App.badge(row.status)}</td></tr>`).join(''));
             App.enhanceTable('#latestFilesTable', { searching: false, pageLength: 5 });
@@ -126,8 +165,23 @@
                     <td>${App.escapeHtml(row.created_at)}</td>
                 </tr>`).join(''));
             App.enhanceTable('#pendingApprovalsTable', { searching: false, pageLength: 5 });
-
-        }).always(() => App.showLoader(false));
+            dashboardUpdatedAt = new Date().toISOString();
+            $('#dashboardUpdateStatus').text(`อัปเดตล่าสุด ${formatDashboardDate(dashboardUpdatedAt)}`);
+        }).fail(function () {
+            $('#dashboardUpdateStatus').addClass('text-danger').text(dashboardUpdatedAt
+                ? `อัปเดตไม่สำเร็จ · แสดงข้อมูลล่าสุด ${formatDashboardDate(dashboardUpdatedAt)} · กดรีเฟรชเพื่อลองอีกครั้ง`
+                : 'ไม่สามารถโหลดข้อมูลได้ · กดรีเฟรชเพื่อลองอีกครั้ง');
+            if (!dashboardUpdatedAt) {
+                $('#dashboardSummary [data-summary]').text('—');
+                $('#projectStatusLegend').html('<li>ไม่สามารถโหลดข้อมูลสถานะโครงงานได้</li>');
+                $('#riskLatestCalculated').text('ไม่สามารถโหลดข้อมูลได้');
+            }
+        }).always(function () {
+            dashboardLoading = false;
+            $('[data-action="refresh-dashboard"]').prop('disabled', false);
+            $('#dashboardSummary, #riskOverviewCard').attr('aria-busy', 'false');
+            App.showLoader(false);
+        });
     }
 
     function bindDashboardSearch() {

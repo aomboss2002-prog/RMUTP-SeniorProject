@@ -3,6 +3,8 @@ require_once __DIR__ . '/../app/store.php';
 require_once __DIR__ . '/../app/session.php';
 require_once __DIR__ . '/../app/storage.php';
 require_once __DIR__ . '/../app/system-health.php';
+require_once __DIR__ . '/../app/admin-workflow.php';
+require_once __DIR__ . '/../app/advisor-counts.php';
 start_app_session();
 
 header('Content-Type: application/json; charset=utf-8');
@@ -283,10 +285,50 @@ if ($resource === 'students' && $action === 'page' && $method === 'GET') {
 }
 
 if ($resource === 'system-health') {
+    header('Cache-Control: private, no-store');
+    if ($action === 'backup-database') {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST' || $method !== 'POST') respond(['success' => false, 'message' => 'Method not allowed.'], 405);
+        if ((request_json()['confirm'] ?? false) !== true) respond(['success' => false, 'message' => 'กรุณายืนยันการสำรองฐานข้อมูล'], 422);
+        if (time() - (int) ($_SESSION['database_backup_attempt'] ?? 0) < 60) {
+            header('Retry-After: 60');
+            respond(['success' => false, 'message' => 'กรุณารอ 1 นาทีก่อนสำรองฐานข้อมูลอีกครั้ง'], 429);
+        }
+        $_SESSION['database_backup_attempt'] = time();
+        session_write_close();
+        require_once __DIR__ . '/../app/database-backup.php';
+        try {
+            $backup = database_backup_export(database_connection());
+            header('X-Content-Type-Options: nosniff');
+            respond(['success' => true, 'data' => $backup]);
+        } catch (Throwable $error) {
+            $code = in_array($error->getMessage(), ['BACKUP_LIMIT', 'BACKUP_UNSUPPORTED_SCHEMA'], true) ? $error->getMessage() : 'BACKUP_FAILED';
+            error_log('[DATABASE BACKUP] ' . $code);
+            respond(['success' => false, 'error_code' => $code, 'message' => $code === 'BACKUP_LIMIT'
+                ? 'ข้อมูลเกินขนาดหรือเวลาที่สำรองผ่านเว็บได้ กรุณาสำรองผ่านผู้ให้บริการฐานข้อมูลหรือ mysqldump'
+                : ($code === 'BACKUP_UNSUPPORTED_SCHEMA'
+                    ? 'ฐานข้อมูลมีโครงสร้างที่เครื่องมือสำรองผ่านเว็บยังไม่รองรับ กรุณาใช้เครื่องมือของผู้ให้บริการฐานข้อมูลหรือ mysqldump'
+                    : 'สำรองฐานข้อมูลไม่สำเร็จ กรุณาตรวจการเชื่อมต่อและสิทธิ์อ่านฐานข้อมูล ไม่มีการดาวน์โหลดไฟล์สำรองที่ไม่ครบ')], 503);
+        }
+    }
     if ($method === 'GET') {
         respond(['success' => true, 'data' => system_health_snapshot()]);
     }
     if ($method !== 'POST') respond(['success' => false, 'message' => 'Method not allowed.'], 405);
+    if ($action === 'repair-ai-schema') {
+        if ((request_json()['confirm'] ?? false) !== true) {
+            respond(['success' => false, 'message' => 'กรุณายืนยันการสร้างตารางก่อนดำเนินการ'], 422);
+        }
+        require_once __DIR__ . '/../app/schema-repair.php';
+        try {
+            $result = repair_missing_ai_tables(database_connection());
+            respond(['success' => true, 'data' => $result, 'message' => $result['created']
+                ? 'สร้างตารางเรียบร้อย: ' . implode(', ', $result['created'])
+                : 'ตาราง AI ครบแล้ว ไม่มีการเปลี่ยนแปลงข้อมูล']);
+        } catch (Throwable $error) {
+            error_log('[SCHEMA REPAIR] failed code=' . $error->getCode());
+            respond(['success' => false, 'error_code' => 'SCHEMA_REPAIR_FAILED', 'message' => 'สร้างตารางไม่ครบ กรุณาตรวจสิทธิ์ CREATE และความเข้ากันได้กับตาราง projects ตารางที่สร้างสำเร็จแล้วจะคงอยู่และลองใหม่ได้'], 503);
+        }
+    }
     if ($action === 'test-storage') {
         try {
             $result = system_health_storage_probe();
@@ -298,14 +340,19 @@ if ($resource === 'system-health') {
     }
     if ($action === 'test-email') {
         $config = env_config();
+        $issue = mail_configuration_issue($config, mailer_transport());
+        if ($issue) respond(['success' => false, 'message' => $issue['message'], 'error_code' => $issue['code']], 422);
         $recipient = trim((string) ($config['ADMIN_RECOVERY_EMAIL'] ?? ($_SESSION['app_user']['email'] ?? '')));
         if (!filter_var($recipient, FILTER_VALIDATE_EMAIL)) respond(['success' => false, 'message' => 'กรุณากำหนด ADMIN_RECOVERY_EMAIL เป็นอีเมลที่ถูกต้อง'], 422);
         try {
             $result = system_health_test_email($recipient);
-            respond(['success' => true, 'data' => ['transport' => $result['transport'] ?? ''], 'message' => 'ส่งอีเมลทดสอบแล้ว กรุณาตรวจสอบกล่องจดหมายของผู้ดูแล']);
+            respond(['success' => true, 'data' => ['transport' => $result['transport'] ?? ''], 'message' => ($result['transport'] ?? '') === 'log'
+                ? 'บันทึกอีเมลทดสอบลง Log แล้ว โหมดนี้ไม่ส่งอีเมลจริง'
+                : 'ผู้ให้บริการรับอีเมลทดสอบแล้ว กรุณาตรวจกล่องจดหมายและ Spam ของผู้ดูแล']);
         } catch (Throwable $error) {
-            error_log('[SYSTEM HEALTH ACTION] email: ' . $error->getMessage());
-            respond(['success' => false, 'message' => 'ส่งอีเมลทดสอบไม่สำเร็จ กรุณาตรวจสอบการตั้งค่าอีเมล'], 503);
+            $issue = mail_delivery_issue($error);
+            error_log('[SYSTEM HEALTH ACTION] email: ' . $issue['code']);
+            respond(['success' => false, 'message' => $issue['message'], 'error_code' => $issue['code']], 503);
         }
     }
     respond(['success' => false, 'message' => 'Unknown diagnostic action.'], 404);
@@ -318,7 +365,50 @@ if ($resource === 'dashboard') {
     respond(['success' => true, 'data' => admin_dashboard_payload(database_connection())]);
 }
 
+if ($resource === 'projects' && ($method === 'DELETE' || in_array($action, ['deletion-cleanups', 'cleanup-delete'], true))) {
+    require_once __DIR__ . '/../app/admin-project-delete.php';
+    header('Cache-Control: private, no-store');
+    try {
+        $pdo = database_connection();
+        if ($action === 'deletion-cleanups' && $method === 'GET') {
+            respond(['success' => true, 'data' => admin_project_cleanup_jobs($pdo)]);
+        }
+        if ($action === 'cleanup-delete' && $method === 'POST') {
+            $payload = request_json();
+            if (($payload['confirm'] ?? false) !== true) respond(['success' => false, 'message' => 'กรุณายืนยันก่อนลบไฟล์'], 422);
+            $result = admin_project_cleanup_files($pdo, (string) ($payload['job_id'] ?? ''));
+            respond(['success' => true, 'data' => $result, 'message' => $result['pending'] ? 'ยังมีไฟล์ที่ลบไม่สำเร็จ สามารถลองใหม่ได้' : 'ลบไฟล์ที่ค้างเรียบร้อยแล้ว']);
+        }
+        if ($method !== 'DELETE' || $_SERVER['REQUEST_METHOD'] !== 'DELETE') respond(['success' => false, 'message' => 'Method not allowed'], 405);
+        $id = is_string($_GET['id'] ?? null) ? $_GET['id'] : '';
+        $payload = request_json();
+        if ($id === '' || ($payload['confirm_id'] ?? null) !== $id) respond(['success' => false, 'message' => 'กรุณาพิมพ์รหัสโครงงานเพื่อยืนยันการลบ'], 422);
+        $result = admin_project_delete($pdo, $id);
+        $pending = 0;
+        if ($result['cleanup_job']) {
+            try { $pending = admin_project_cleanup_files($pdo, $result['cleanup_job'])['pending']; }
+            catch (Throwable) { $pending = -1; }
+        }
+        respond(['success' => true, 'data' => $result + ['pending_files' => $pending], 'message' => $pending
+            ? 'ลบโครงงานและข้อมูลแล้ว แต่ยังมีไฟล์รอลบ กรุณากดลองลบไฟล์ค้างอีกครั้ง'
+            : 'ลบโครงงาน เอกสาร และประวัติที่เกี่ยวข้องแล้ว']);
+    } catch (OutOfBoundsException $e) {
+        respond(['success' => false, 'message' => $e->getMessage()], 404);
+    } catch (InvalidArgumentException $e) {
+        respond(['success' => false, 'message' => $e->getMessage()], 422);
+    } catch (Throwable $e) {
+        error_log('[PROJECT DELETE] failed code=' . $e->getCode());
+        respond(['success' => false, 'message' => 'ดำเนินการไม่สำเร็จ กรุณาตรวจฐานข้อมูลและลองใหม่'], 503);
+    }
+}
+
 $data = load_data();
+
+if ($resource === 'timeline' && $method === 'GET') {
+    $projectId = (string) ($_GET['project_id'] ?? '');
+    if (!find_row($data['projects'] ?? [], $projectId)) respond(['success' => false, 'message' => 'Project not found'], 404);
+    respond(['success' => true, 'data' => admin_timeline_rows(project_tracking_history($projectId))]);
+}
 
 if ($resource === 'students') {
     if ($method === 'GET') {
@@ -360,7 +450,10 @@ if ($resource === 'students') {
         validate_student_identity($payload, $data['students'] ?? []);
         $payload['id'] = next_student_id($data['students']);
         $payload['photo'] = uploaded_student_photo($payload['id']) ?? 'assets/img/profile-student.svg';
-        $payload['status'] = $payload['status'] ?? 'Pending';
+        $payload['status'] = $payload['status'] ?? 'Active';
+        if (!in_array($payload['status'], ['Active', 'Completed', 'Inactive'], true)) {
+            respond(['success' => false, 'message' => 'สถานะนักศึกษาไม่ถูกต้อง'], 422);
+        }
         sync_student_to_database($payload);
         $data['students'][] = $payload;
         save_data($data);
@@ -371,6 +464,9 @@ if ($resource === 'students') {
         unset($payload['_method']);
         unset($payload['advisor_id']);
         $studentId = (string) ($payload['id'] ?? '');
+        if (isset($payload['status']) && !in_array($payload['status'], ['Active', 'Completed', 'Inactive'], true)) {
+            respond(['success' => false, 'message' => 'สถานะนักศึกษาไม่ถูกต้อง'], 422);
+        }
         if (isset($payload['faculty']) && !in_array($payload['faculty'], app_faculties(), true)) {
             respond(['success' => false, 'message' => 'Please select a valid faculty.'], 422);
         }
@@ -437,10 +533,7 @@ if ($resource === 'students') {
 
 if ($resource === 'advisors') {
     if ($method === 'GET') {
-        $advisors = array_map(static function (array $advisor): array {
-            unset($advisor['password_hash']);
-            return $advisor;
-        }, $data['advisors'] ?? []);
+        $advisors = admin_advisors_with_student_counts($data);
         respond(['success' => true, 'data' => array_values($advisors)]);
     }
     if ($method === 'POST') {
@@ -621,48 +714,42 @@ if ($resource === 'documents') {
 }
 
 if ($resource === 'upload' && $method === 'POST') {
-    if (empty($_FILES['file'])) {
-        respond(['success' => false, 'message' => 'No file uploaded'], 422);
-    }
-    $type = $_POST['type'] ?? 'proposal';
-    if (!in_array($type, ['proposal', 'draft', 'complete'], true)) {
-        respond(['success' => false, 'message' => 'Invalid document type'], 422);
-    }
-    if ($_FILES['file']['size'] > 20 * 1024 * 1024) {
-        respond(['success' => false, 'message' => 'Maximum file size is 20 MB'], 422);
-    }
-    $mime = (new finfo(FILEINFO_MIME_TYPE))->file($_FILES['file']['tmp_name']);
-    $extension = strtolower(pathinfo($_FILES['file']['name'], PATHINFO_EXTENSION));
-    $signature = file_get_contents($_FILES['file']['tmp_name'], false, null, 0, 5);
-    if ($extension !== 'pdf' || $mime !== 'application/pdf' || $signature !== '%PDF-') {
-        respond(['success' => false, 'message' => 'Valid PDF files only'], 422);
-    }
-    $targetDir = __DIR__ . '/../uploads/' . $type;
-    if (!is_dir($targetDir)) {
-        mkdir($targetDir, 0775, true);
-    }
-    $originalName = basename($_FILES['file']['name']);
-    // Capture the size before move/upload. On Vercel Blob there is no local
-    // destination file after the upload, so filesize($target) is invalid.
-    $uploadedBytes = max(0, (int) ($_FILES['file']['size'] ?? filesize($_FILES['file']['tmp_name'])));
-    $target = $targetDir . '/' . bin2hex(random_bytes(24)) . '.pdf';
-    if (storage_driver() === 'vercel_blob') {
-        try {
-            storage_put_uploaded_file($_FILES['file']['tmp_name'], $type, basename($target), 'application/pdf');
-        } catch (Throwable $exception) {
-            error_log('Document Blob upload failed: ' . $exception->getMessage());
-            respond(['success' => false, 'message' => 'Could not save uploaded file'], 500);
+    $payload = request_json();
+    $temporary = null;
+    try {
+        $context = admin_upload_context($data, $payload);
+        $type = $context['type'];
+        $blobPath = trim((string) ($payload['blob_pathname'] ?? ''), '/');
+        if ($blobPath !== '') {
+            if (storage_driver() !== 'vercel_blob') throw new InvalidArgumentException('Cloud uploads are not enabled');
+            $filename = storage_accept_blob_reference($type, $blobPath);
+            $stored = storage_materialize($type, $filename);
+            $source = $stored['path'];
+            $temporary = $stored['temporary'] ? $source : null;
+            $originalName = basename((string) ($payload['original_name'] ?? ''));
+        } else {
+            $file = $_FILES['file'] ?? [];
+            if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'] ?? '')) {
+                throw new InvalidArgumentException('อัปโหลดไฟล์ไม่สำเร็จ กรุณาเลือกไฟล์ PDF อีกครั้ง');
+            }
+            $source = $file['tmp_name'];
+            $originalName = basename($file['name']);
+            $filename = bin2hex(random_bytes(24)) . '.pdf';
         }
-    } elseif (!move_uploaded_file($_FILES['file']['tmp_name'], $target)) {
-        respond(['success' => false, 'message' => 'Could not save uploaded file'], 500);
+        // Verify actual stored bytes, never trust client-reported size or MIME.
+        $uploadedBytes = admin_validate_pdf($source, $originalName);
+        if ($blobPath === '') storage_put_uploaded_file($source, $type, $filename, 'application/pdf');
+    } catch (Throwable $exception) {
+        if ($temporary && is_file($temporary)) @unlink($temporary);
+        $invalid = $exception instanceof InvalidArgumentException;
+        if (!$invalid) error_log('Admin document upload failed: ' . $exception->getMessage());
+        respond(['success' => false, 'message' => $invalid ? $exception->getMessage() : 'ไม่สามารถตรวจสอบหรือบันทึกไฟล์ได้'], $invalid ? 422 : 500);
     }
-    $document = [
+    if ($temporary && is_file($temporary)) @unlink($temporary);
+    $document = $context + [
         'id' => next_id($data['documents'], 'DOC'),
-        'project_id' => $_POST['project_id'] ?? 'PRJ001',
-        'student_id' => $_POST['student_id'] ?? 'STU001',
-        'type' => $type,
-        'title' => $_POST['title'] ?? ucfirst($type) . ' File',
-        'filename' => basename($target),
+        'title' => trim((string) ($payload['title'] ?? '')) ?: ucfirst($type) . ' File',
+        'filename' => $filename,
         'original_name' => $originalName,
         'size' => round($uploadedBytes / 1048576, 2) . ' MB',
         'status' => 'Review',
@@ -705,11 +792,19 @@ if ($resource === 'comments' && $method === 'POST') {
 }
 
 if ($resource === 'reports') {
+    try {
+        $from = (string) ($_GET['from'] ?? '');
+        $to = (string) ($_GET['to'] ?? '');
+        $reportProjects = admin_report_filter($data['projects'], 'updated_at', $from, $to);
+        $reportDocuments = admin_report_filter($data['documents'], 'uploaded_at', $from, $to);
+        $reportApprovals = admin_report_filter($data['approvals'], 'created_at', $from, $to);
+    } catch (InvalidArgumentException $error) {
+        respond(['success' => false, 'message' => $error->getMessage()], 422);
+    }
     respond(['success' => true, 'data' => [
-        'students' => $data['students'],
-        'projects' => array_map(fn($project) => enrich_project($project, $data), $data['projects']),
-        'documents' => $data['documents'],
-        'approvals' => $data['approvals'],
+        'projects' => array_map(fn($project) => enrich_project($project, $data), $reportProjects),
+        'documents' => $reportDocuments,
+        'approvals' => $reportApprovals,
     ]]);
 }
 
@@ -751,7 +846,7 @@ if ($resource === 'import' && $method === 'POST') {
         }
         $code = trim((string) ($row['code'] ?? ''));
         $phone = normalize_student_phone((string) ($row['phone'] ?? ''));
-        $email = strtolower(str_replace('-', '', $code) . '@rmutp.com');
+        $email = strtolower(str_replace('-', '', $code) . '@rmutp.ac.th');
         $firstName = trim((string) ($row['first_name'] ?? ''));
         $lastName = trim((string) ($row['last_name'] ?? ''));
         $faculty = trim((string) ($row['faculty'] ?? ''));
@@ -836,6 +931,7 @@ if ($resource === 'import' && $method === 'POST') {
 
 if ($resource === 'export') {
     $kind = $_GET['kind'] ?? 'students';
+    if ($kind === 'advisors') respond(['success' => true, 'data' => admin_advisors_with_student_counts($data)]);
     respond(['success' => true, 'data' => array_values($data[$kind] ?? [])]);
 }
 
@@ -856,9 +952,14 @@ if ($resource === 'settings') {
         respond(['success' => true, 'data' => $data['settings']]);
     }
     if ($method === 'POST') {
-        $data['settings'] = array_merge($data['settings'], request_json());
+        require_once __DIR__ . '/../app/settings.php';
+        try {
+            $data['settings'] = validated_settings_update($data['settings'] ?? [], request_json());
+        } catch (InvalidArgumentException $error) {
+            respond(['success' => false, 'message' => $error->getMessage()], 422);
+        }
         save_data($data);
-        respond(['success' => true, 'data' => $data['settings'], 'message' => 'Settings saved']);
+        respond(['success' => true, 'data' => $data['settings'], 'message' => 'บันทึกการตั้งค่าระบบเรียบร้อยแล้ว']);
     }
 }
 

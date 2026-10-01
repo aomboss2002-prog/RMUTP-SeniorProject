@@ -44,8 +44,9 @@
         const currentPage = String($('body').data('page') || '');
         if (currentPage === 'login' || currentPage.startsWith('portal-') || currentPage.startsWith('advisor-')) return;
         loadNotifications(false);
+        if (!App.autoRefreshEnabled) return;
         setInterval(() => {
             if (document.visibilityState === 'visible') loadNotifications(true);
-        }, 30000);
+        }, App.autoRefreshMs);
     });
 })(jQuery);

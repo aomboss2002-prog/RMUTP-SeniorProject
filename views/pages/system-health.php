@@ -1,12 +1,41 @@
-<?php page_header('สถานะระบบ', 'ตรวจสอบความพร้อมของบริการสำคัญโดยไม่แสดงข้อมูลลับ'); ?>
+<?php page_header('ติดตามข้อมูลเว็บไซต์', 'ภาพรวมโครงงาน เอกสาร และกิจกรรมล่าสุด พร้อมสถานะบริการเบื้องหลัง'); ?>
 
 <section class="health-toolbar" aria-label="การตรวจสอบสถานะระบบ">
     <div>
-        <span class="health-kicker">SYSTEM READINESS</span>
+        <span class="health-kicker">WEBSITE MONITOR</span>
         <p id="healthCheckedAt" class="mb-0" aria-live="polite">กำลังตรวจสอบสถานะล่าสุด...</p>
+        <small id="healthAutoStatus" class="text-muted" role="status">อัปเดตอัตโนมัติทุก 5 วินาที</small>
     </div>
     <button type="button" class="btn btn-outline-primary" id="healthRefresh"><i class="fa-solid fa-rotate" aria-hidden="true"></i><span>รีเฟรช</span></button>
 </section>
+
+<section class="health-website" id="healthWebsite" aria-label="ภาพรวมข้อมูลเว็บไซต์" aria-busy="true">
+    <p class="health-website-notice" id="healthWebsiteNotice" role="status">กำลังโหลดข้อมูลเว็บไซต์...</p>
+    <div class="health-website-metrics">
+        <?php foreach ([['students','fa-user-graduate','นักศึกษา','คน'],['advisors','fa-chalkboard-user','อาจารย์ที่ปรึกษา','คน'],['projects','fa-folder-open','โครงงานทั้งหมด','โครงงาน'],['documents','fa-file-lines','เอกสารทั้งหมด','ฉบับ'],['awaiting_review','fa-hourglass-half','เอกสารรอตรวจ','ฉบับ'],['completed_projects','fa-circle-check','โครงงานเสร็จสิ้น','โครงงาน']] as [$key,$icon,$label,$unit]): ?>
+        <article class="health-website-metric" data-website-metric="<?= e($key) ?>">
+            <div><i class="fa-solid <?= e($icon) ?>" aria-hidden="true"></i><span><?= e($label) ?></span></div>
+            <strong data-website-count="<?= e($key) ?>">--</strong><small><?= e($unit) ?></small>
+        </article>
+        <?php endforeach; ?>
+    </div>
+    <div class="health-website-layout">
+        <section class="health-panel" aria-labelledby="healthProjectStatusTitle">
+            <header><div><span class="health-kicker">PROJECT OVERVIEW</span><h2 id="healthProjectStatusTitle">สถานะโครงงาน</h2></div></header>
+            <div id="healthProjectStatus" class="health-project-status"><p class="health-website-empty">กำลังโหลดสถานะโครงงาน...</p></div>
+        </section>
+        <section class="health-panel" aria-labelledby="healthDocumentsTitle">
+            <header><div><span class="health-kicker">RECENT DOCUMENTS</span><h2 id="healthDocumentsTitle">เอกสารล่าสุด</h2></div><span class="health-website-caption">สูงสุด 6 รายการ</span></header>
+            <ul id="healthRecentDocuments" class="health-website-list"><li class="health-website-empty">กำลังโหลดเอกสาร...</li></ul>
+        </section>
+        <section class="health-panel" aria-labelledby="healthActivityTitle">
+            <header><div><span class="health-kicker">WORKFLOW HISTORY</span><h2 id="healthActivityTitle">กิจกรรมล่าสุด</h2></div><span class="health-website-caption">ประวัติที่บันทึกไว้</span></header>
+            <ul id="healthRecentActivity" class="health-website-list"><li class="health-website-empty">กำลังโหลดกิจกรรม...</li></ul>
+        </section>
+    </div>
+</section>
+
+<header class="health-infrastructure-heading"><span class="health-kicker">SYSTEM READINESS</span><h2>ตรวจสอบบริการเบื้องหลัง</h2><p>ความพร้อมของบริการและเครื่องมือวินิจฉัยระบบ</p></header>
 
 <section class="health-readiness health-is-loading" id="healthReadiness" aria-busy="true" aria-live="polite">
     <div class="health-overall">
@@ -40,9 +69,21 @@
         </div>
         <div class="health-actions" aria-label="เครื่องมือวินิจฉัย">
             <div><strong>ทดสอบแบบสั่งงานเท่านั้น</strong><span>การรีเฟรชหน้านี้จะไม่ส่งอีเมลหรือสร้างไฟล์</span></div>
+            <button class="btn btn-outline-warning d-none" type="button" id="healthRepairSchema">สร้างตาราง AI ที่ขาด</button>
             <button class="btn btn-outline-primary" type="button" id="healthTestStorage"><i class="fa-solid fa-hard-drive" aria-hidden="true"></i>ทดสอบ Storage</button>
             <button class="btn btn-primary" type="button" id="healthTestEmail"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i>ส่งอีเมลทดสอบ</button>
         </div>
+        <p id="healthDiagnosticResult" class="alert d-none m-3" role="status" aria-live="polite"></p>
+        <section class="health-actions border-top flex-wrap" aria-labelledby="healthBackupTitle">
+            <div class="w-100">
+                <strong id="healthBackupTitle">สำรองฐานข้อมูล</strong>
+                <span id="healthBackupDescription">ดาวน์โหลดโครงสร้างและข้อมูลเป็น .sql.gz ไม่รวม PDF/รูปภาพ และไฟล์ .env</span>
+                <span>มีข้อมูลส่วนบุคคลและค่าแฮชรหัสผ่าน โปรดเก็บไฟล์อย่างปลอดภัยและไม่เผยแพร่</span>
+            </div>
+            <button class="btn btn-outline-primary" type="button" id="healthBackupDatabase" aria-describedby="healthBackupDescription"><i class="fa-solid fa-download" aria-hidden="true"></i>สำรองฐานข้อมูล</button>
+            <span>สำหรับฐานข้อมูลขนาดเล็ก · เว้นระยะอย่างน้อย 60 วินาทีต่อครั้ง</span>
+        </section>
+        <p id="healthBackupResult" class="alert d-none m-3 text-break" role="status" aria-live="polite" aria-atomic="true"></p>
     </section>
 
     <aside class="health-side-stack">

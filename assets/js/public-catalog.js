@@ -63,7 +63,7 @@
         const authors = Array.isArray(item.authors) ? item.authors.filter(Boolean).join(', ') : (item.authors || 'ไม่ระบุผู้จัดทำ');
         const downloadUrl = item.available ? safeDownloadUrl(item.download_url) : '';
         const action = downloadUrl
-            ? `<a class="download-button" href="${escapeHtml(downloadUrl)}"><i class="fa-solid fa-download" aria-hidden="true"></i> ดาวน์โหลด PDF</a>`
+            ? `<a class="download-button" href="${escapeHtml(downloadUrl)}" data-download-name="${escapeHtml(`complete-${item.code || item.document_id}.pdf`)}"><i class="fa-solid fa-download" aria-hidden="true"></i> ดาวน์โหลด PDF</a>`
             : '<span class="file-unavailable"><i class="fa-regular fa-clock" aria-hidden="true"></i> ไฟล์ไม่พร้อมให้ดาวน์โหลด</span>';
 
         return `<article class="thesis-card" style="--item-index:${index}">
@@ -191,6 +191,30 @@
         document.getElementById('catalogHeading').scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
     results.addEventListener('click', (event) => { if (event.target.closest('#retryCatalog')) loadCatalog(); });
+    results.addEventListener('click', async (event) => {
+        const link = event.target.closest('.download-button');
+        if (!link) return;
+        event.preventDefault();
+        const originalLabel = link.innerHTML;
+        link.setAttribute('aria-busy', 'true');
+        link.innerHTML = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> กำลังเตรียมไฟล์...';
+        try {
+            const previewUrl = await (window.App?.loadPdfPreview
+                ? window.App.loadPdfPreview(link.href)
+                : Promise.reject(new Error('PDF loader unavailable')));
+            const download = document.createElement('a');
+            download.href = previewUrl;
+            download.download = link.dataset.downloadName || 'complete-project.pdf';
+            document.body.appendChild(download);
+            download.click();
+            download.remove();
+        } catch (_error) {
+            window.alert('ไม่สามารถดาวน์โหลดไฟล์ PDF ได้');
+        } finally {
+            link.removeAttribute('aria-busy');
+            link.innerHTML = originalLabel;
+        }
+    });
     passwordToggle.addEventListener('click', () => {
         const show = passwordInput.type === 'password';
         passwordInput.type = show ? 'text' : 'password';

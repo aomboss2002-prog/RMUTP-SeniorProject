@@ -25,7 +25,14 @@
     <?php if (page_uses_blob_upload((string) ($page ?? '')) && function_exists('storage_driver') && storage_driver() === 'vercel_blob'): ?>
     <meta name="blob-upload-script" content="<?= e(versioned_asset_url('js/vercel-blob-upload.js')) ?>">
     <?php endif; ?>
-    <title><?= e($meta['title'] ?? 'ระบบจัดการโครงงาน RMUTP') ?> | ระบบจัดการโครงงาน RMUTP</title>
+    <?php
+    $pageSystemSettings = [];
+    try { if (function_exists('system_settings')) $pageSystemSettings = system_settings(); }
+    catch (Throwable) { /* Error/login pages must remain renderable during a database outage. */ }
+    ?>
+    <meta name="notification-refresh" content="<?= max(10000, min(300000, (int) ($pageSystemSettings['notification_refresh'] ?? 30000))) ?>">
+    <meta name="notifications-enabled" content="<?= !array_key_exists('notifications_enabled', $pageSystemSettings) || filter_var($pageSystemSettings['notifications_enabled'], FILTER_VALIDATE_BOOLEAN) ? 'true' : 'false' ?>">
+    <title><?= e($meta['title'] ?? 'ระบบจัดการโครงงาน RMUTP') ?> | <?= e((string) ($pageSystemSettings['system_name'] ?? 'ระบบจัดการโครงงาน RMUTP')) ?></title>
     <link rel="icon" type="image/png" sizes="any" href="<?= e(versioned_asset_url('img/rmutp-logo-web.png')) ?>">
     <link href="<?= e(versioned_asset_url('vendor/bootstrap/bootstrap.min.css')) ?>" rel="stylesheet">
     <?php if (page_uses_datatables((string) ($page ?? ''))): ?>

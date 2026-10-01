@@ -25,6 +25,17 @@ $last = student_list_page($pdo, ['start' => 100, 'length' => 25, 'draw' => 8]);
 expect(count($last['data']) === 23 && $last['draw'] === 8, 'Last page/draw');
 $filtered = student_list_page($pdo, ['status' => 'Completed', 'length' => 999]);
 expect($filtered['recordsFiltered'] === 61 && count($filtered['data']) === 50, 'Filter/count/hard cap');
+$active = student_list_page($pdo, ['status' => 'Active']);
+expect($active['recordsFiltered'] === 62, 'Legacy Pending students must match academic Active filter');
+foreach (['Active', 'Draft', 'Review', 'Approved', 'New', ''] as $legacyStatus) {
+    $update = $pdo->prepare('UPDATE students SET status = ? WHERE id = ?');
+    $update->execute([$legacyStatus, 'S1']);
+    expect(student_list_page($pdo, ['status' => 'Active'])['recordsFiltered'] === 62, 'Academic filter handles legacy status');
+}
+$pdo->exec("UPDATE students SET status = 'Inactive' WHERE id = 'S1'");
+expect(student_list_page($pdo, ['status' => 'Inactive'])['recordsFiltered'] === 1, 'Inactive filter');
+expect(student_list_page($pdo, ['status' => 'Active'])['recordsFiltered'] === 61, 'Inactive excluded from Active');
+$pdo->exec("UPDATE students SET status = 'Pending' WHERE id = 'S1'");
 $searched = student_list_page($pdo, ['search_text' => '100%_!']);
 expect($searched['recordsFiltered'] === 1 && $searched['data'][0]['id'] === 'S123', 'Literal wildcard search');
 $name = student_list_page($pdo, ['search_text' => 'อาจารย์ หนึ่ง']);

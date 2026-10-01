@@ -6,16 +6,7 @@
     let projects = [];
     const businessFaculty = 'คณะบริหารธุรกิจ';
     const businessMajors = [
-        'บช.บ. บัญชีบัณฑิต (ได้รับการรับรองจากสภาวิชาชีพบัญชี)',
-        'บธ.บ. สาขาวิชาการจัดการ',
-        'บธ.บ. สาขาวิชาการจัดการโลจิสติกส์และโซ่อุปทาน',
-        'บธ.บ. สาขาวิชาการตลาด',
-        'บธ.บ. สาขาวิชานวัตกรรมทางการเงินและการลงทุน',
-        'บธ.บ. สาขาวิชาระบบสารสนเทศและนวัตกรรมดิจิทัล',
-        'บธ.บ. สาขาวิชาการจัดการธุรกิจระหว่างประเทศ (หลักสูตรนานาชาติ)',
-        'วท.บ. สาขาวิชาการวิเคราะห์ข้อมูลทางธุรกิจ',
-        'บธ.บ. สาขาวิชาการเป็นผู้ประกอบการ',
-        'บธ.บ. สาขาวิชานวัตกรรมธุรกิจบริการยั่งยืน'
+        'บธ.บ. สาขาวิชาระบบสารสนเทศและนวัตกรรมดิจิทัล'
     ];
 
     function loadLookups() {
@@ -62,6 +53,21 @@
         return `${student.first_name || ''} ${student.last_name || ''}`.trim() || id || '';
     }
 
+    function studentAcademicStatus(value) {
+        if (['Completed', 'Inactive'].includes(value)) return value;
+        if (!value || ['Active', 'Pending', 'Draft', 'Review', 'Approved', 'New'].includes(value)) return 'Active';
+        return value;
+    }
+
+    function studentStatusBadge(value, type = 'display') {
+        const status = studentAcademicStatus(value);
+        const labels = { Active: 'กำลังศึกษา', Completed: 'สำเร็จการศึกษา', Inactive: 'ไม่ใช้งาน' };
+        const label = labels[status] || 'ไม่ระบุ';
+        if (type !== 'display') return label;
+        const color = { Active: 'primary', Completed: 'success', Inactive: 'secondary' }[status] || 'secondary';
+        return `<span class="badge rounded-pill text-bg-${color}">${label}</span>`;
+    }
+
     function loadStudentsTable() {
         if ($.fn.DataTable.isDataTable('#studentsTable')) {
             $('#studentsTable').DataTable().ajax.reload(null, false);
@@ -95,7 +101,7 @@
                 textColumn('code'),
                 { data: null, render: (row) => `<strong>${App.escapeHtml(row.first_name)} ${App.escapeHtml(row.last_name)}</strong><span class="d-block text-muted">${App.escapeHtml(row.email)}</span>` },
                 textColumn('major'), textColumn('advisor_name'),
-                { data: 'status', render: (value) => App.badge(value) },
+                { data: 'status', render: (value, type) => studentStatusBadge(value, type) },
                 { data: null, orderable: false, searchable: false, className: 'text-end', render: (row) => {
                     const id = App.escapeHtml(encodeURIComponent(row.id));
                     return `
@@ -143,6 +149,7 @@
                 App.api('students', { query: { id } }).done(function (response) {
                     const row = response.data.student;
                     Object.keys(row).forEach((key) => $form.find(`[name="${key}"]`).val(row[key]));
+                    $form.find('[name="status"]').val(studentAcademicStatus(row.status));
                     $photoPreview.attr('src', App.url(`api/profile-photo.php?id=${encodeURIComponent(id)}&v=${Date.now()}`));
                 });
             }
@@ -173,7 +180,7 @@
             $('#studentPhoto').attr('src', App.url(`api/profile-photo.php?id=${encodeURIComponent(student.id)}`));
             $('#studentFullName').text(`${student.first_name} ${student.last_name}`);
             $('#studentCode').text(student.code);
-            $('#studentStatus').html(App.badge(student.status));
+            $('#studentStatus').html(studentStatusBadge(student.status));
             $('#studentAdvisor').html(`
                 <strong>${App.escapeHtml(data.advisor?.name || '')}</strong>
                 <span class="d-block text-muted">${App.escapeHtml(data.advisor?.department || '')}</span>
@@ -225,6 +232,7 @@
     function loadAdvisorsTable() {
         App.api('advisors').done(function (response) {
             advisors = response.data || [];
+            if ($.fn.DataTable.isDataTable('#advisorsTable')) $('#advisorsTable').DataTable().destroy();
             $('#advisorsTable tbody').html(advisors.map((row) => `
                 <tr>
                     <td><strong>${App.escapeHtml(row.name)}</strong></td>
@@ -279,6 +287,7 @@
     }
 
     function loadProjectsTable() {
+        loadProjectDeletionJobs();
         pagedAdminTable('#projectsTable', 'projects', (row) => `
                 <tr>
                     <td>${App.escapeHtml(row.code)}</td>
@@ -289,6 +298,7 @@
                     <td data-search="${App.escapeHtml(row.status)}">${App.badge(row.status)}</td>
                     <td class="text-end">
                         <div class="row-actions" role="group" aria-label="จัดการโครงงาน">
+                            <button class="row-action delete" type="button" data-action="delete-project" data-id="${App.escapeHtml(row.id)}" data-title="${App.escapeHtml(row.title)}" title="ลบโครงงานพร้อมเอกสาร" aria-label="ลบโครงงานพร้อมเอกสาร"><i class="fa-solid fa-trash"></i></button>
                             <a class="row-action view" href="${App.escapeHtml(App.url(`admin/page.php?view=timeline&project=${encodeURIComponent(row.id)}`))}" title="ดูไทม์ไลน์" aria-label="ดูไทม์ไลน์"><i class="fa-solid fa-timeline"></i></a>
                             <a class="row-action edit" href="${App.escapeHtml(App.url(`admin/page.php?view=barcode&project=${encodeURIComponent(row.id)}`))}" title="ดูบาร์โค้ด" aria-label="ดูบาร์โค้ด"><i class="fa-solid fa-barcode"></i></a>
                             ${row.status === 'Completed' && row.complete_approved
@@ -356,35 +366,68 @@
                 bootstrap.Modal.getOrCreateInstance(document.getElementById('filePreviewModal')).show();
             });
 
-            $('#documentUploadForm').on('submit', function (event) {
+            $('#documentUploadForm').on('submit', async function (event) {
                 event.preventDefault();
+                const $submit = $(this).find('[type="submit"]');
+                if ($submit.prop('disabled')) return;
                 const formData = new FormData(this);
                 const $bar = $('#uploadProgress');
-                $.ajax({
-                    url: 'api/index.php?resource=upload',
-                    method: 'POST',
-                    data: formData,
-                    processData: false,
-                    contentType: false,
-                    xhr: function () {
-                        const xhr = $.ajaxSettings.xhr();
-                        xhr.upload.onprogress = function (event) {
-                            if (event.lengthComputable) {
-                                const percent = Math.round((event.loaded / event.total) * 100);
-                                $bar.css('width', percent + '%').text(percent + '%');
-                            }
-                        };
-                        return xhr;
+                const file = $file[0].files[0];
+                if (!file || !/\.pdf$/i.test(file.name) || file.size < 1 || file.size > 20 * 1024 * 1024) {
+                    App.toast('กรุณาเลือกไฟล์ PDF ขนาดไม่เกิน 20 MB', 'error');
+                    return;
+                }
+                $submit.prop('disabled', true);
+                try {
+                    let response;
+                    if ($('meta[name="storage-driver"]').attr('content') === 'vercel_blob') {
+                        await loadAdminBlobUploader();
+                        const stage = formData.get('type');
+                        const prefix = ($('meta[name="blob-path-prefix"]').attr('content') || 'rmutp').replace(/^\/+|\/+$/g, '');
+                        const pathname = `${prefix}/${stage}/${crypto.randomUUID()}.pdf`;
+                        const blob = await window.RmutpBlobUpload({ file, pathname, payload: { kind: 'document', stage },
+                            onProgress: ({ percentage }) => $bar.css('width', `${percentage}%`).text(`${Math.round(percentage)}%`) });
+                        formData.delete('file');
+                        formData.set('blob_pathname', blob.pathname);
+                        formData.set('original_name', file.name);
                     }
-                }).done(function (response) {
+                    response = await App.api('upload', { method: 'POST', formData,
+                        xhr: function () {
+                            const xhr = $.ajaxSettings.xhr();
+                            if (!formData.has('blob_pathname')) xhr.upload.onprogress = event => {
+                                if (event.lengthComputable) {
+                                    const percent = Math.round(event.loaded / event.total * 100);
+                                    $bar.css('width', `${percent}%`).text(`${percent}%`);
+                                }
+                            };
+                            return xhr;
+                        }
+                    });
                     App.toast(response.message);
                     $bar.css('width', '0%').text('0%');
                     loadDocuments($('#documentUploadForm').data('type'));
-                }).fail(function (xhr) {
-                    App.toast(xhr.responseJSON?.message || 'Upload failed', 'error');
-                });
+                } catch (error) {
+                    if (!error?.responseJSON) App.toast(error?.message || 'อัปโหลดไม่สำเร็จ', 'error');
+                } finally {
+                    $submit.prop('disabled', false);
+                }
             });
         });
+    }
+
+    let adminBlobPromise;
+    function loadAdminBlobUploader() {
+        if (typeof window.RmutpBlobUpload === 'function') return Promise.resolve();
+        if (!adminBlobPromise) adminBlobPromise = new Promise((resolve, reject) => {
+            const url = $('meta[name="blob-upload-script"]').attr('content');
+            if (!url) return reject(new Error('ไม่พบโมดูลอัปโหลด Cloud'));
+            const script = document.createElement('script');
+            script.src = url;
+            script.onload = () => typeof window.RmutpBlobUpload === 'function' ? resolve() : reject(new Error('โมดูลอัปโหลดไม่พร้อม'));
+            script.onerror = () => { script.remove(); reject(new Error('โหลดโมดูลอัปโหลดไม่สำเร็จ')); };
+            document.head.appendChild(script);
+        }).catch(error => { adminBlobPromise = null; throw error; });
+        return adminBlobPromise;
     }
 
     function initBarcode() {
@@ -474,19 +517,34 @@
         });
     }
 
+    let timelineRevision = 0;
     function renderProjectTimeline(projectId) {
-        const project = projects.find((row) => row.id === projectId) || projects[0] || {};
-        const steps = [
-            { step: 'Proposal', status: project.status === 'Draft' ? 'Pending' : 'Approved', reviewer: project.advisor_name, created_at: project.updated_at },
-            { step: 'Draft', status: ['Approved', 'Completed'].includes(project.status) ? 'Approved' : 'Review', reviewer: project.advisor_name, created_at: project.updated_at },
-            { step: 'Complete', status: project.status === 'Completed' ? 'Completed' : 'Pending', reviewer: 'Committee', created_at: project.updated_at }
-        ];
-        $('#projectTimeline').html(steps.map(timelineItem).join(''));
+        const revision = ++timelineRevision;
+        const $timeline = $('#projectTimeline');
+        $timeline.text(projectId ? 'กำลังโหลดประวัติ...' : 'ยังไม่มีโครงงาน');
+        if (!projectId) return;
+        App.api('timeline', { query: { project_id: projectId } }).done(response => {
+            if (revision !== timelineRevision) return;
+            $timeline.html(response.data.map(row => `<div class="timeline-item"><strong>${App.escapeHtml(row.step)}</strong>
+                <span class="d-block text-muted">${App.escapeHtml(row.reviewer)} · ${App.escapeHtml(row.created_at)}</span>
+                ${row.status ? App.badge(row.status) : ''}<span class="d-block">ความก้าวหน้า ${App.escapeHtml(row.progress)}%</span></div>`).join('')
+                || '<p class="text-muted">ยังไม่มีประวัติที่บันทึกไว้ ไม่สามารถสรุปวันส่งหรือวันอนุมัติย้อนหลังได้</p>');
+        }).fail(() => { if (revision === timelineRevision) $timeline.text('โหลดประวัติไม่สำเร็จ กรุณาลองใหม่'); });
     }
 
+    let reportsRevision = 0;
     function loadReports() {
-        App.api('reports').done(function (response) {
+        const from = $('#reportFrom').val() || '';
+        const to = $('#reportTo').val() || '';
+        const revision = ++reportsRevision;
+        if (from && to && from > to) {
+            App.toast('วันที่เริ่มต้นต้องไม่เกินวันที่สิ้นสุด', 'error');
+            return;
+        }
+        App.api('reports', { query: { from, to } }).done(function (response) {
+            if (revision !== reportsRevision) return;
             const projects = response.data.projects;
+            if ($.fn.DataTable.isDataTable('#reportsTable')) $('#reportsTable').DataTable().destroy();
             $('#reportsTable tbody').html(projects.map((row) => `
                 <tr><td>${App.escapeHtml(row.code)}</td><td>${App.escapeHtml(row.title)}</td><td>${App.escapeHtml(row.student_name)}</td><td>${App.escapeHtml(row.advisor_name)}</td><td>${App.badge(row.status)}</td><td>${App.escapeHtml(row.progress)}%</td></tr>`).join(''));
             App.enhanceTable('#reportsTable');
@@ -579,8 +637,8 @@
         $('[data-action="download-sample-csv"]').on('click', function () {
             App.downloadCsv('student-import-sample.csv', [{
                 code: '076760305001-8', first_name: 'สุขุม', last_name: 'พวงแสงเพ็ญ',
-                email: '0767603050018@rmutp.com', phone: '0812345678', year_level: 3,
-                faculty: businessFaculty, major: businessMajors[5]
+                email: '0767603050018@rmutp.ac.th', phone: '0812345678', year_level: 3,
+                faculty: businessFaculty, major: businessMajors[0]
             }]);
         });
         $('[data-action="import-preview"]').on('click', function () {
@@ -601,6 +659,18 @@
             const index = Number($(this).data('import-phone'));
             this.value = String(this.value).replace(/\D/g, '').slice(0, 10);
             if (importRows[index]) importRows[index].phone = this.value;
+        });
+        $(document).on('change', '#importPreviewTable [data-import-status]', function () {
+            const index = Number($(this).data('import-status'));
+            if (!importRows[index]) return;
+            const selected = importedStudentStatus(this.value);
+            importRows[index].status = selected.status;
+            importRows[index].status_label = selected.label;
+            this.value = selected.status;
+            Array.from(this.options).forEach(option => { option.defaultSelected = option.value === selected.status; });
+            $(this).closest('td').attr('data-search', selected.label).attr('data-order', selected.label);
+            const table = App.state.tables['#importPreviewTable'];
+            if (table) table.row($(this).closest('tr')).invalidate('dom');
         });
         renderImportRows(importRows, 'เลือกไฟล์ Excel หรือ CSV เพื่อดูรายชื่อที่ยังไม่มีในระบบ');
     }
@@ -650,7 +720,11 @@
             <td>${App.escapeHtml(row.email)}</td>
             <td><input class="form-control form-control-sm" type="tel" inputmode="numeric" maxlength="10" data-import-phone="${index}" value="${App.escapeHtml(row.phone || '')}" placeholder="เพิ่มภายหลังได้" aria-label="เบอร์โทร ${App.escapeHtml(row.code)} (ไม่บังคับ)"></td>
             <td>${App.escapeHtml(row.year_level)}</td>
-            <td>${App.escapeHtml(row.status_label)}</td>
+            <td data-search="${App.escapeHtml(row.status_label)}" data-order="${App.escapeHtml(row.status_label)}">
+                <select class="form-select form-select-sm" style="min-width: 155px" data-import-status="${index}" aria-label="สถานะนักศึกษา ${App.escapeHtml(row.code)}">
+                    ${['Active', 'Completed', 'Inactive'].map(status => `<option value="${status}"${row.status === status ? ' selected' : ''}>${importedStudentStatus(status).label}</option>`).join('')}
+                </select>
+            </td>
         </tr>`).join(''));
         App.enhanceTable('#importPreviewTable', { responsive: false, autoWidth: false, scrollX: true });
         if (!rows.length) $('#importPreviewTable tbody .dataTables_empty').text(emptyMessage);
@@ -669,24 +743,23 @@
         return Math.max(1, currentBuddhistYear - entryYear + 1);
     }
 
-    function importedStudentStatus(code) {
-        const value = String(code || '').trim();
-        if (value === '40') return { status: 'Completed', label: 'สำเร็จการศึกษา' };
-        if (['10', '11', '12', '13', '14', '15', '16', '84'].includes(value)) {
-            return { status: 'Active', label: 'กำลังศึกษา' };
-        }
-        return { status: 'Inactive', label: `ไม่ใช้งาน (${value || '-'})` };
+    function importedStudentStatus(value) {
+        if (value === 'Completed') return { status: 'Completed', label: 'สำเร็จการศึกษา' };
+        if (value === 'Inactive') return { status: 'Inactive', label: 'ไม่ใช้งาน' };
+        return { status: 'Active', label: 'กำลังศึกษา' };
     }
 
-    function buildImportedStudent(code, fullName, statusCode, faculty = businessFaculty, major = businessMajors[5]) {
+    function buildImportedStudent(code, fullName, statusCode, faculty = businessFaculty, major = businessMajors[0]) {
         const normalizedCode = String(code || '').trim();
         const name = parseStudentName(fullName);
-        const studentStatus = importedStudentStatus(statusCode);
+        // Every newly selected file starts as Active, regardless of its legacy status code.
+        // The administrator can then choose a different status in the preview.
+        const studentStatus = importedStudentStatus('Active');
         return {
             code: normalizedCode,
             first_name: name.first_name,
             last_name: name.last_name,
-            email: `${normalizedCode.replace(/\D/g, '')}@rmutp.com`,
+            email: `${normalizedCode.replace(/\D/g, '')}@rmutp.ac.th`,
             phone: '',
             faculty,
             major,
@@ -727,7 +800,7 @@
             return lines.map(parseCsvLine).map((cells) => Object.fromEntries(headers.map((header, index) => [header, cells[index] || ''])))
                 .filter((row) => /^\d{12}-\d$/.test(row.code || ''))
                 .map((row) => {
-                    const imported = buildImportedStudent(row.code, `${row.first_name || ''} ${row.last_name || ''}`, row.status_code || '10', row.faculty || businessFaculty, row.major || businessMajors[5]);
+                    const imported = buildImportedStudent(row.code, `${row.first_name || ''} ${row.last_name || ''}`, row.status_code || '10', row.faculty || businessFaculty, row.major || businessMajors[0]);
                     imported.phone = String(row.phone || '').replace(/\D/g, '').slice(0, 10);
                     if (Number(row.year_level) > 0) imported.year_level = Number(row.year_level);
                     return imported;
@@ -740,7 +813,7 @@
         if (!/<table\b/i.test(html)) throw new Error('ไฟล์ .xls นี้ไม่ใช่แบบฟอร์มตารางที่ระบบรองรับ');
         const documentNode = new DOMParser().parseFromString(html, 'text/html');
         const faculty = businessFaculty;
-        const major = businessMajors.find((item) => item.includes('ระบบสารสนเทศและนวัตกรรมดิจิทัล')) || businessMajors[5];
+        const major = businessMajors[0];
         return Array.from(documentNode.querySelectorAll('tr')).map((tr) =>
             Array.from(tr.querySelectorAll('th,td')).map((cell) => (cell.textContent || '').replace(/\s+/g, ' ').trim())
         ).filter((cells) => /^\d{12}-\d$/.test(cells[1] || ''))
@@ -770,21 +843,111 @@
     }
 
     function initSettings() {
-        App.api('settings').done(function (response) {
-            const settings = response.data;
-            $('#systemName').val(settings.system_name);
-            $('#academicYear').val(settings.academic_year);
-            $('#approvalMode').val(settings.approval_mode);
-            $('#notificationRefresh').val(settings.notification_refresh);
+        const $form = $('#settingsForm');
+        const $inputs = $form.find('input');
+        let loaded = null;
+        let ready = false;
+        let busy = false;
+        let repair = false;
+        function status(message, state = 'ready') {
+            $('#settingsStatus').text(message).attr('data-state', state);
+        }
+        function values() {
+            return {
+                academic_year: String($('#academicYear').val()).trim(),
+                notifications_enabled: $('#notificationsEnabled').prop('checked'),
+                notification_refresh: Number($('#notificationRefresh').val()) * 1000,
+                ai_title_enabled: $('#aiTitleEnabled').prop('checked'),
+                ai_risk_enabled: $('#aiRiskEnabled').prop('checked')
+            };
+        }
+        function fill(data) {
+            $('#academicYear').val(data.academic_year);
+            $('#notificationRefresh').val(data.notification_refresh / 1000);
+            $('#notificationsEnabled').prop('checked', data.notifications_enabled);
+            $('#aiTitleEnabled').prop('checked', data.ai_title_enabled);
+            $('#aiRiskEnabled').prop('checked', data.ai_risk_enabled);
+            $inputs.each(function () { this.setCustomValidity(''); }).removeAttr('aria-invalid');
+        }
+        function controls() {
+            const changed = loaded && JSON.stringify(values()) !== JSON.stringify(loaded);
+            $form.attr('aria-busy', busy ? 'true' : 'false');
+            $inputs.prop('disabled', !ready || busy);
+            $('#notificationRefresh').prop('disabled', !ready || busy || !$('#notificationsEnabled').prop('checked'));
+            $('#settingsSave').prop('disabled', !ready || busy || (!changed && !repair));
+            $('#settingsReset').prop('disabled', !ready || busy || !changed);
+        }
+        function bool(value, fallback = true) {
+            return value == null ? fallback : value === true || value === 1 || value === '1' || value === 'true';
+        }
+        function load() {
+            if (busy) return;
+            busy = true;
+            ready = false;
+            controls();
+            $('#settingsRetry').prop('hidden', true);
+            status('กำลังโหลดการตั้งค่า…', 'loading');
+            App.api('settings', { silentErrors: true }).done(function (response) {
+                const data = response.data || {};
+                const rawYear = String(data.academic_year == null ? '' : data.academic_year).trim();
+                const year = /^\d{4}$/.test(rawYear) ? Number(rawYear) : 0;
+                const displayYear = year >= 1900 && year <= 2399 ? String(year + 543) : year >= 2400 && year <= 2999 ? rawYear : '';
+                repair = displayYear !== rawYear || displayYear === '';
+                loaded = {
+                    academic_year: displayYear,
+                    notifications_enabled: bool(data.notifications_enabled),
+                    notification_refresh: data.notification_refresh == null ? 30000 : Number(data.notification_refresh),
+                    ai_title_enabled: bool(data.ai_title_enabled),
+                    ai_risk_enabled: bool(data.ai_risk_enabled)
+                };
+                fill(loaded);
+                ready = true;
+                status(!displayYear ? 'กรุณาระบุปีการศึกษา พ.ศ. ที่ถูกต้อง แล้วบันทึกเพื่อแก้ไขค่าเดิม' : repair ? 'แปลงปี ค.ศ. เดิมเป็น พ.ศ. แล้ว กรุณาบันทึกเพื่อยืนยัน' : 'โหลดการตั้งค่าปัจจุบันแล้ว', !displayYear ? 'error' : 'ready');
+            }).fail(function () {
+                status('โหลดการตั้งค่าไม่สำเร็จ กรุณาลองอีกครั้ง', 'error');
+                $('#settingsRetry').prop('hidden', false);
+            }).always(function () { busy = false; controls(); });
+        }
+        $inputs.on('input change', function () {
+            this.setCustomValidity('');
+            $(this).removeAttr('aria-invalid');
+            controls();
+            status(JSON.stringify(values()) !== JSON.stringify(loaded) ? 'มีการแก้ไขที่ยังไม่ได้บันทึก' : 'ยังไม่มีการเปลี่ยนแปลง');
+        });
+        $('#settingsRetry').on('click', load);
+        $('#settingsReset').on('click', function () {
+            if (!ready || busy) return;
+            fill(loaded);
+            controls();
+            status(repair ? 'คืนค่าแล้ว กรุณาระบุหรือยืนยันปี พ.ศ. ที่ถูกต้องก่อนบันทึก' : 'คืนค่าที่บันทึกไว้แล้ว');
         });
         $('#settingsForm').on('submit', function (event) {
             event.preventDefault();
-            App.api('settings', { method: 'POST', data: App.formToObject($(this)) }).done((response) => App.toast(response.message));
+            if (!ready || busy) return;
+            const data = values();
+            let invalid = '';
+            let message = '';
+            if (!/^\d{4}$/.test(data.academic_year) || Number(data.academic_year) < 2400 || Number(data.academic_year) > 2999) { invalid = '#academicYear'; message = 'กรุณาระบุปี พ.ศ. ตั้งแต่ 2400–2999'; }
+            else if (!Number.isInteger(data.notification_refresh / 1000) || data.notification_refresh < 10000 || data.notification_refresh > 300000) { invalid = '#notificationRefresh'; message = 'กรุณาระบุช่วงเวลา 10–300 วินาที'; }
+            if (invalid) {
+                $(invalid).prop('disabled', false).attr('aria-invalid', 'true')[0].setCustomValidity(message);
+                $(invalid)[0].reportValidity();
+                status(message, 'error');
+                return;
+            }
+            busy = true;
+            controls();
+            status('กำลังบันทึกการตั้งค่า…', 'loading');
+            App.api('settings', { method: 'POST', data, silentErrors: true }).done(function () {
+                loaded = data;
+                repair = false;
+                fill(loaded);
+                status('บันทึกการตั้งค่าแล้ว การรีเฟรชอัตโนมัติใช้ค่าใหม่เมื่อโหลดหน้าอีกครั้ง', 'success');
+            }).fail(function () {
+                status('บันทึกไม่สำเร็จ ข้อมูลที่แก้ไขยังอยู่ กรุณาลองบันทึกอีกครั้ง', 'error');
+            }).always(function () { busy = false; controls(); });
         });
-        $('#themePreference').on('change', function () {
-            $('body').toggleClass('high-contrast', $(this).val() === 'contrast');
-            App.toast('Theme updated', 'info');
-        });
+        load();
     }
 
     $(document).on('click', '[data-action="delete-student"]', function () {
@@ -821,6 +984,56 @@
                 });
             }
         });
+    });
+
+    function loadProjectDeletionJobs() {
+        App.api('projects', { query: { action: 'deletion-cleanups' }, silentErrors: true }).done(function (response) {
+            const $panel = $('#projectDeletionJobs').empty();
+            const jobs = response.data || [];
+            $panel.toggleClass('d-none', jobs.length === 0);
+            for (const job of jobs) {
+                const $row = $('<div class="d-flex flex-wrap gap-2 align-items-center mb-2">');
+                $('<span>').text(`ไฟล์รอลบ: ${job.title} (${job.files} ไฟล์)`).appendTo($row);
+                $('<button type="button" class="btn btn-sm btn-outline-danger">').text('ลองลบไฟล์ค้างอีกครั้ง').attr('data-action', 'retry-project-files').attr('data-job', job.id).appendTo($row);
+                $panel.append($row);
+            }
+        }).fail(function () { $('#projectDeletionJobs').removeClass('d-none').text('ตรวจรายการไฟล์รอลบไม่สำเร็จ กรุณารีเฟรชหน้าเพื่อตรวจอีกครั้ง'); });
+    }
+
+    $(document).on('click', '[data-action="delete-project"]', async function () {
+        const $button = $(this);
+        if ($button.prop('disabled')) return;
+        $button.prop('disabled', true);
+        const id = String($button.attr('data-id') || '');
+        try {
+            const confirmation = await Swal.fire({
+                title: 'ลบโครงงานถาวร?', icon: 'warning',
+                text: `โครงงาน: ${$button.attr('data-title')} — จะลบเอกสาร ผลพิจารณา บันทึกติดตาม และผล AI บัญชีผู้ใช้และกลุ่มยังอยู่ ไม่สามารถกู้คืนผ่านหน้าเว็บได้ ควรสำรองข้อมูลก่อน พิมพ์ ${id} เพื่อยืนยัน`,
+                input: 'text', inputPlaceholder: id, showCancelButton: true,
+                confirmButtonText: 'ยืนยันลบถาวร', cancelButtonText: 'ยกเลิก', confirmButtonColor: '#b91c1c',
+                inputValidator: value => value === id ? undefined : 'กรุณาพิมพ์รหัสโครงงานให้ตรงกัน'
+            });
+            if (!confirmation.isConfirmed) return;
+            const response = await App.api('projects', { method: 'DELETE', query: { id }, data: { confirm_id: confirmation.value }, silentErrors: true });
+            App.toast(response.message, response.data?.pending_files ? 'warning' : 'success');
+            loadProjectsTable();
+        } catch (error) {
+            App.toast(error.responseJSON?.message || 'ลบไม่สำเร็จ กรุณารีเฟรชเพื่อตรวจสถานะก่อนลองใหม่', 'error');
+        } finally { $button.prop('disabled', false); }
+    });
+
+    $(document).on('click', '[data-action="retry-project-files"]', async function () {
+        const $button = $(this);
+        if ($button.prop('disabled')) return;
+        $button.prop('disabled', true);
+        try {
+            const confirmation = await App.confirmAction('ลองลบไฟล์ค้าง?', 'ลบเฉพาะไฟล์ของโครงงานที่ยืนยันลบไปแล้ว และไม่มีโครงงานอื่นใช้อยู่');
+            if (!confirmation.isConfirmed) return;
+            const response = await App.api('projects', { method: 'POST', query: { action: 'cleanup-delete' }, data: { job_id: $button.attr('data-job'), confirm: true }, silentErrors: true });
+            App.toast(response.message, response.data?.pending ? 'warning' : 'success');
+            loadProjectDeletionJobs();
+        } catch (error) { App.toast(error.responseJSON?.message || 'ลบไฟล์ไม่สำเร็จ สามารถลองใหม่ได้', 'error'); }
+        finally { $button.prop('disabled', false); }
     });
 
     $(document).on('click', '[data-action="complete-project"]', function () {

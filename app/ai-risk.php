@@ -36,6 +36,7 @@ function ai_title_config_value(string $key, string $default = ''): string
 
 function refresh_project_risk_score_if_stale(string $projectId): void
 {
+    if (!system_setting_enabled('ai_risk_enabled')) return;
     $pdo = database_connection();
     $interval = max(60, (int) ai_title_config_value('AI_RISK_SCAN_INTERVAL', '300'));
     $stale = $pdo->prepare(
@@ -225,6 +226,7 @@ function save_project_risk_score(array $risk): void
 
 function process_project_risk_scores(int $limit = 100): array
 {
+    if (!system_setting_enabled('ai_risk_enabled')) return ['processed' => 0, 'levels' => ['low' => 0, 'watch' => 0, 'high' => 0, 'critical' => 0], 'disabled' => true];
     $pdo = database_connection();
     $limit = max(1, min(500, $limit));
     $projects = $pdo->query(

@@ -13,7 +13,7 @@ function dashboard_expect(bool $condition, string $message): void {
     if (!$condition) throw new RuntimeException($message);
 }
 $empty = admin_dashboard_payload($pdo);
-dashboard_expect($empty['summary'] === ['students' => 0, 'advisors' => 0, 'projects' => 0, 'pending' => 0], 'Empty summary');
+dashboard_expect($empty['summary'] === ['students' => 0, 'advisors' => 0, 'projects' => 0, 'pending' => 0, 'users' => 0, 'completed' => 0, 'in_progress' => 0], 'Empty summary');
 dashboard_expect($empty['activities'] === [] && $empty['files'] === [], 'Missing runtime');
 $document = $pdo->prepare('INSERT INTO documents VALUES (?, ?, ?, ?, ?)');
 for ($i = 0; $i < 100; $i++) {
@@ -31,7 +31,7 @@ for ($i = 0; $i < 30; $i++) {
 $save = $pdo->prepare("INSERT INTO app_state VALUES ('runtime', ?)");
 $save->execute([json_encode($runtime)]);
 $result = admin_dashboard_payload($pdo);
-dashboard_expect($result['summary'] === ['students' => 100, 'advisors' => 1, 'projects' => 100, 'pending' => 50], 'Relational counts, not JSON counts');
+dashboard_expect($result['summary'] === ['students' => 100, 'advisors' => 1, 'projects' => 100, 'pending' => 50, 'users' => 101, 'completed' => 50, 'in_progress' => 50], 'Relational counts, not JSON counts');
 dashboard_expect($result['uploads']['draft'] === 50 && $result['project_status']['Completed'] === 50, 'Aggregates');
 dashboard_expect($result['risk_overview']['total'] === 2 && $result['risk_overview']['latest_calculated_at'] === '2026-09-19', 'Risk normalization');
 dashboard_expect(count($result['files']) === 5 && $result['files'][0]['title'] === 'Document 99', 'Bounded newest files, stable tie order');

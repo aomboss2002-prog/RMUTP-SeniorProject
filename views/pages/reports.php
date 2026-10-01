@@ -2,6 +2,7 @@
     ['label' => 'ส่งออก Excel', 'href' => route_url('export-excel'), 'icon' => 'fa-file-export'],
 ]); ?>
 <section class="card form-card mb-4">
+    <p class="text-muted">โครงงานกรองตามวันที่อัปเดตล่าสุด เอกสารกรองตามวันที่อัปโหลด รวมวันเริ่มต้นและวันสิ้นสุด เว้นว่างเพื่อดูทั้งหมด</p>
     <div class="row g-3 align-items-end">
         <div class="col-md-4"><label class="form-label">จากวันที่</label><input class="form-control" type="date" id="reportFrom"></div>
         <div class="col-md-4"><label class="form-label">ถึงวันที่</label><input class="form-control" type="date" id="reportTo"></div>

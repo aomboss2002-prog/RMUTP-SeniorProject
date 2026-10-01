@@ -1,7 +1,19 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/../app/runtime-read.php';
-$pdo = new PDO('sqlite::memory:', null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+class RuntimeReadTestPDO extends PDO
+{
+    public string $lastQuery = '';
+
+    public function query(string $query, ?int $fetchMode = null, mixed ...$fetchModeArgs): PDOStatement|false
+    {
+        $this->lastQuery = $query;
+        return $fetchMode === null
+            ? parent::query($query)
+            : parent::query($query, $fetchMode, ...$fetchModeArgs);
+    }
+}
+$pdo = new RuntimeReadTestPDO('sqlite::memory:', null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
 $pdo->exec('CREATE TABLE app_state (state_key TEXT PRIMARY KEY, state_json TEXT)');
 $rows = [
     ['id' => 'own', 'student_id' => 'S1', 'read_by' => ['S1']],
@@ -17,6 +29,10 @@ $statement = $pdo->prepare('INSERT INTO app_state VALUES (?, ?)');
 $statement->execute(['runtime', json_encode(['notifications' => $rows, 'groups' => [['id' => 'G1', 'member_ids' => ['S1']]],
     'students' => [['password_hash' => 'private']], 'documents' => array_fill(0, 2000, ['title' => 'not-needed'])])]);
 $selected = runtime_read_collections($pdo, ['groups', 'notifications']);
+// SQLite accepts unquoted GROUPS, but MySQL 8 treats it as a reserved keyword.
+foreach (['groups', 'notifications'] as $alias) {
+    if (!str_contains($pdo->lastQuery, "AS `{$alias}`")) throw new RuntimeException('Runtime SQL alias must be quoted: ' . $alias);
+}
 $messageRows = [
     ['id' => 'personal', 'student_id' => 'S1'],
     ['id' => 'teammate', 'student_id' => 'S2', 'group_id' => 'G1'],

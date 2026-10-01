@@ -38,6 +38,15 @@
                 <?php endforeach; ?>
             </select>
         </div>
+        <div class="col-md-4">
+            <label class="form-label" for="studentAcademicStatus">สถานะนักศึกษา</label>
+            <select class="form-select" id="studentAcademicStatus" name="status" required>
+                <option value="Active">กำลังศึกษา</option>
+                <option value="Completed">สำเร็จการศึกษา</option>
+                <option value="Inactive">ไม่ใช้งาน</option>
+            </select>
+            <small class="text-muted">ไม่ใช่สถานะโครงงาน โดยสถานะไม่ใช้งานจะไม่อนุญาตให้เข้าสู่ระบบ</small>
+        </div>
         <div class="col-12">
             <label class="form-label" for="studentPhotoFile">รูปนักศึกษา</label>
             <div class="student-photo-upload">

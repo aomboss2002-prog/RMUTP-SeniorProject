@@ -5,6 +5,14 @@
     <div class="col-xl-3">
         <form class="card upload-card" id="documentUploadForm" data-type="<?= e($stage) ?>">
             <input type="hidden" name="type" value="<?= e($stage) ?>">
+            <?php if ($stage === 'draft'): ?>
+            <label class="form-label" for="uploadChapter">บทที่ต้องการส่ง</label>
+            <select class="form-select mb-3" name="chapter" id="uploadChapter" required>
+                <?php for ($chapter = 1; $chapter <= 5; $chapter++): ?>
+                <option value="<?= $chapter ?>">บทที่ <?= $chapter ?></option>
+                <?php endfor; ?>
+            </select>
+            <?php endif; ?>
             <div class="row g-3">
                 <div class="col-12">
                     <label class="form-label" for="uploadTitle">ชื่อเอกสาร</label>

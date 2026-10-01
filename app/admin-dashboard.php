@@ -20,6 +20,9 @@ function admin_dashboard_payload(PDO $pdo): array
     }
     $result['summary']['projects'] = array_sum($result['project_status']);
     $result['summary']['pending'] = $result['project_status']['Pending'] ?? 0;
+    $result['summary']['users'] = $result['summary']['students'] + $result['summary']['advisors'];
+    $result['summary']['completed'] = $result['project_status']['Completed'] ?? 0;
+    $result['summary']['in_progress'] = $result['summary']['projects'] - $result['summary']['completed'];
 
     // This optional table may not exist before its migration is installed.
     try {

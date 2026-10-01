@@ -66,6 +66,9 @@ assert_assets(
 );
 
 if (!str_contains(rendered_page_head('portal-proposal'), 'name="blob-upload-script"')
+    || !str_contains(rendered_page_head('proposal'), 'name="blob-upload-script"')
+    || !str_contains(rendered_page_head('draft'), 'name="blob-upload-script"')
+    || !str_contains(rendered_page_head('complete'), 'name="blob-upload-script"')
     || str_contains(rendered_page_head('portal-documents'), 'name="blob-upload-script"')) {
     fwrite(STDERR, 'Blob upload module must be discoverable only on upload pages.' . PHP_EOL);
     exit(1);
