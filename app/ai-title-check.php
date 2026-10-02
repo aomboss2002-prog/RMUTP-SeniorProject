@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/runtime-records.php';
 
 /**
  * Queue and process project-title similarity checks.
@@ -19,102 +20,56 @@ function queue_project_title_check(string $projectId, string $title): ?array
 {
     $projectId = trim($projectId);
     $title = trim($title);
-    if ($projectId === '' || $title === '') return null;
-    if (!system_setting_enabled('ai_title_enabled')) return null;
-
+    if ($projectId === '' || $title === '' || !system_setting_enabled('ai_title_enabled')) return null;
     $pdo = database_connection();
-    $ownsTransaction = !$pdo->inTransaction();
-    if ($ownsTransaction) $pdo->beginTransaction();
+    $owns = !$pdo->inTransaction();
+    if ($owns) $pdo->beginTransaction();
     try {
-        $cancel = $pdo->prepare(
-            "UPDATE project_title_checks
-             SET status = 'cancelled', completed_at = NOW(), error_message = 'Superseded by a newer title'
-             WHERE project_id = :project_id AND status IN ('queued', 'processing')"
-        );
-        $cancel->execute(['project_id' => $projectId]);
-        $insert = $pdo->prepare(
-            "INSERT INTO project_title_checks (project_id, title, status)
-             VALUES (:project_id, :title, 'queued')"
-        );
-        $insert->execute(['project_id' => $projectId, 'title' => $title]);
-        $id = (int) $pdo->lastInsertId();
-        if ($ownsTransaction) $pdo->commit();
-        $queued = latest_project_title_check($projectId, $id);
-        if ($queued && ai_web_processing_enabled()) {
-            return process_project_title_check_inline($queued);
+        $id = runtime_sequence($pdo, 'title');
+        $parent = $pdo->prepare('SELECT id FROM projects WHERE id=? FOR UPDATE');
+        $parent->execute([$projectId]);
+        if (!$parent->fetchColumn()) throw new RuntimeException('Project no longer exists');
+        $query = $pdo->prepare("SELECT id FROM " . runtime_records_sql('title') . " t WHERE project_id=? AND status IN ('queued','processing')");
+        $query->execute([$projectId]);
+        foreach ($query->fetchAll(PDO::FETCH_COLUMN) as $oldId) {
+            $row = runtime_record_get($pdo, 'title', $oldId);
+            runtime_record_put($pdo, 'title', $oldId, array_replace($row, ['status' => 'cancelled',
+                'completed_at' => date('Y-m-d H:i:s'), 'error_message' => 'Superseded by a newer title']));
         }
-        return $queued;
-    } catch (Throwable $error) {
-        if ($ownsTransaction && $pdo->inTransaction()) $pdo->rollBack();
-        throw $error;
-    }
+        runtime_record_put($pdo, 'title', $id, ['id' => $id, 'project_id' => $projectId, 'title' => $title,
+            'status' => 'queued', 'engine' => '', 'model' => null, 'max_similarity' => null, 'risk_level' => '',
+            'matches_json' => null, 'error_message' => null, 'attempts' => 0, 'created_at' => date('Y-m-d H:i:s'),
+            'started_at' => null, 'completed_at' => null]);
+        if ($owns) $pdo->commit();
+        $queued = latest_project_title_check($projectId, $id);
+        return $owns && ai_web_processing_enabled() ? process_project_title_check_inline($queued) : $queued;
+    } catch (Throwable $error) { if ($owns && $pdo->inTransaction()) $pdo->rollBack(); throw $error; }
 }
 
-/** Claim and finish one known job inside the current web request. */
 function process_project_title_check_inline(array $queued): array
 {
-    $pdo = database_connection();
-    $jobId = (int) ($queued['id'] ?? 0);
-    if ($jobId <= 0) return $queued;
-
-    try {
-        $pdo->beginTransaction();
-        $statement = $pdo->prepare(
-            "SELECT id, project_id, title, attempts
-             FROM project_title_checks
-             WHERE id = :id AND status = 'queued'
-             LIMIT 1 FOR UPDATE"
-        );
-        $statement->execute(['id' => $jobId]);
-        $job = $statement->fetch();
-        if (!is_array($job)) {
-            $pdo->commit();
-            return latest_project_title_check((string) ($queued['project_id'] ?? ''), $jobId) ?? $queued;
-        }
-        $update = $pdo->prepare(
-            "UPDATE project_title_checks
-             SET status = 'processing', attempts = attempts + 1, started_at = NOW(),
-                 completed_at = NULL, error_message = NULL
-             WHERE id = :id"
-        );
-        $update->execute(['id' => $jobId]);
-        $pdo->commit();
-        $job['id'] = $jobId;
-        $job['attempts'] = (int) ($job['attempts'] ?? 0) + 1;
-        return process_project_title_check_job($job);
-    } catch (Throwable $error) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
-        $job = $job ?? $queued;
-        $job['attempts'] = (int) ($job['attempts'] ?? 1);
-        try {
-            fail_project_title_check_job($job, $error);
-        } catch (Throwable $storeError) {
-            error_log('[AI WEB WORKER] Unable to store title-check failure: ' . $storeError->getMessage());
-        }
+    $job = claim_runtime_title((int) $queued['id']);
+    if (!$job) return latest_project_title_check((string) $queued['project_id'], (int) $queued['id']) ?? $queued;
+    try { return process_project_title_check_job($job); }
+    catch (Throwable $error) {
+        fail_project_title_check_job($job, $error);
         error_log('[AI WEB WORKER] ' . $error->getMessage());
-        return latest_project_title_check((string) ($queued['project_id'] ?? ''), $jobId) ?? $queued;
+        return latest_project_title_check((string) $job['project_id'], (int) $job['id']) ?? $queued;
     }
 }
 
 function latest_project_title_check(string $projectId, ?int $jobId = null): ?array
 {
     if ($projectId === '') return null;
-    $sql = 'SELECT id, project_id, title, status, engine, model, max_similarity, risk_level,
-                   matches_json, error_message, attempts, created_at, started_at, completed_at
-            FROM project_title_checks
-            WHERE project_id = :project_id';
-    $params = ['project_id' => $projectId];
-    if ($jobId !== null) {
-        $sql .= ' AND id = :id';
-        $params['id'] = $jobId;
-    }
-    $sql .= ' ORDER BY id DESC LIMIT 1';
-    $statement = database_connection()->prepare($sql);
-    $statement->execute($params);
-    $row = $statement->fetch();
-    if (!is_array($row)) return null;
-    $matches = json_decode((string) ($row['matches_json'] ?? ''), true);
-    $row['matches'] = is_array($matches) ? $matches : [];
+    $pdo = database_connection();
+    if ($jobId === null) {
+        $query = $pdo->prepare("SELECT state_json FROM app_state WHERE state_key LIKE 'ai-title:%' AND JSON_UNQUOTE(JSON_EXTRACT(state_json, '$.project_id'))=? ORDER BY state_key DESC LIMIT 1");
+        $query->execute([$projectId]);
+        $json = $query->fetchColumn();
+        $row = $json === false ? null : json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+    } else $row = runtime_record_get($pdo, 'title', $jobId);
+    if (!$row || $row['project_id'] !== $projectId) return null;
+    $row['matches'] = json_decode((string) ($row['matches_json'] ?? ''), true) ?: [];
     unset($row['matches_json']);
     $row['id'] = (int) $row['id'];
     $row['attempts'] = (int) $row['attempts'];
@@ -122,38 +77,48 @@ function latest_project_title_check(string $projectId, ?int $jobId = null): ?arr
     return $row;
 }
 
-function claim_project_title_check_job(): ?array
+function claim_runtime_title(?int $id = null): ?array
 {
-    if (!system_setting_enabled('ai_title_enabled')) return null;
     $pdo = database_connection();
     $pdo->beginTransaction();
     try {
-        $job = $pdo->query(
-            "SELECT id, project_id, title, attempts
-             FROM project_title_checks
-             WHERE status = 'queued'
-                OR (status = 'processing' AND started_at < DATE_SUB(NOW(), INTERVAL 10 MINUTE))
-             ORDER BY id ASC LIMIT 1 FOR UPDATE"
-        )->fetch();
-        if (!is_array($job)) {
+        runtime_sequence($pdo, 'title', false);
+        if ($id === null) {
+            $id = (int) $pdo->query("SELECT id FROM " . runtime_records_sql('title') . " t
+                WHERE status='queued' OR (status='processing' AND started_at < DATE_SUB(NOW(), INTERVAL 10 MINUTE))
+                ORDER BY id LIMIT 1")->fetchColumn();
+        }
+        $job = runtime_record_get($pdo, 'title', $id, true);
+        if (!$job || !($job['status'] === 'queued' || ($job['status'] === 'processing' && strtotime($job['started_at']) < time() - 600))) {
             $pdo->commit();
             return null;
         }
-        $statement = $pdo->prepare(
-            "UPDATE project_title_checks
-             SET status = 'processing', attempts = attempts + 1, started_at = NOW(),
-                 completed_at = NULL, error_message = NULL
-             WHERE id = :id"
-        );
-        $statement->execute(['id' => $job['id']]);
+        $job = array_replace($job, ['status' => 'processing', 'attempts' => (int) $job['attempts'] + 1,
+            'started_at' => date('Y-m-d H:i:s'), 'completed_at' => null, 'error_message' => null]);
+        runtime_record_put($pdo, 'title', $id, $job);
         $pdo->commit();
-        $job['id'] = (int) $job['id'];
-        $job['attempts'] = (int) $job['attempts'] + 1;
         return $job;
-    } catch (Throwable $error) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
-        throw $error;
-    }
+    } catch (Throwable $error) { if ($pdo->inTransaction()) $pdo->rollBack(); throw $error; }
+}
+
+function claim_project_title_check_job(): ?array
+{
+    return system_setting_enabled('ai_title_enabled') ? claim_runtime_title() : null;
+}
+
+/** A cancelled/reclaimed job must never overwrite the newer result. */
+function update_runtime_title_job(array $job, array $values): void
+{
+    $pdo = database_connection();
+    $pdo->beginTransaction();
+    try {
+        runtime_sequence($pdo, 'title', false);
+        $current = runtime_record_get($pdo, 'title', (int) $job['id'], true);
+        if ($current && $current['status'] === 'processing' && (int) $current['attempts'] === (int) $job['attempts']) {
+            runtime_record_put($pdo, 'title', (int) $job['id'], array_replace($current, $values));
+        }
+        $pdo->commit();
+    } catch (Throwable $error) { if ($pdo->inTransaction()) $pdo->rollBack(); throw $error; }
 }
 
 function normalize_ai_title(string $title): string
@@ -295,18 +260,11 @@ function process_project_title_check_job(array $job): array
     $statement = $pdo->prepare('SELECT id, code, title FROM projects WHERE id <> :project_id AND TRIM(title) <> \'\' ORDER BY id');
     $statement->execute(['project_id' => $job['project_id']]);
     $result = title_similarity_results((string) $job['title'], $statement->fetchAll());
-    $update = $pdo->prepare(
-        "UPDATE project_title_checks
-         SET status = 'completed', engine = :engine, model = :model,
-             max_similarity = :max_similarity, risk_level = :risk_level,
-             matches_json = :matches_json, error_message = NULL, completed_at = NOW()
-         WHERE id = :id AND status = 'processing'"
-    );
-    $update->execute([
-        'engine' => $result['engine'], 'model' => $result['model'] ?: null,
+    update_runtime_title_job($job, [
+        'status' => 'completed', 'engine' => $result['engine'], 'model' => $result['model'] ?: null,
         'max_similarity' => $result['maxScore'], 'risk_level' => $result['risk'],
         'matches_json' => json_encode($result['matches'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR),
-        'id' => $job['id'],
+        'error_message' => null, 'completed_at' => date('Y-m-d H:i:s'),
     ]);
     return latest_project_title_check((string) $job['project_id'], (int) $job['id']) ?? [];
 }
@@ -314,16 +272,7 @@ function process_project_title_check_job(array $job): array
 function fail_project_title_check_job(array $job, Throwable $error): void
 {
     $retry = (int) ($job['attempts'] ?? 1) < 3;
-    $statement = database_connection()->prepare(
-        "UPDATE project_title_checks
-         SET status = :status, error_message = :message,
-             completed_at = CASE WHEN :status_copy = 'failed' THEN NOW() ELSE NULL END
-         WHERE id = :id"
-    );
-    $statement->execute([
-        'status' => $retry ? 'queued' : 'failed',
-        'status_copy' => $retry ? 'queued' : 'failed',
-        'message' => mb_substr($error->getMessage(), 0, 1000, 'UTF-8'),
-        'id' => $job['id'],
-    ]);
+    update_runtime_title_job($job, ['status' => $retry ? 'queued' : 'failed',
+        'error_message' => mb_substr($error->getMessage(), 0, 1000, 'UTF-8'),
+        'completed_at' => $retry ? null : date('Y-m-d H:i:s')]);
 }

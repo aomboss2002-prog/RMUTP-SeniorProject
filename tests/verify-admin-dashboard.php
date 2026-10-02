@@ -7,8 +7,8 @@ $pdo = new PDO('sqlite::memory:', null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE
 $pdo->exec('CREATE TABLE students (id TEXT); CREATE TABLE advisors (id TEXT);
     CREATE TABLE projects (status TEXT);
     CREATE TABLE documents (id TEXT, title TEXT, type TEXT, status TEXT, uploaded_at TEXT);
-    CREATE TABLE project_risk_scores (risk_level TEXT, calculated_at TEXT);
     CREATE TABLE app_state (state_key TEXT PRIMARY KEY, state_json TEXT)');
+$pdo->sqliteCreateFunction('JSON_UNQUOTE', static fn($value) => $value, 1);
 function dashboard_expect(bool $condition, string $message): void {
     if (!$condition) throw new RuntimeException($message);
 }
@@ -21,7 +21,9 @@ for ($i = 0; $i < 100; $i++) {
     $pdo->exec("INSERT INTO projects VALUES ('" . ($i % 2 ? 'Pending' : 'Completed') . "')");
     $document->execute([sprintf('D%03d', $i), 'Document ' . $i, $i % 2 ? 'draft' : 'proposal', 'Review', '2026-09-19 10:00:00']);
 }
-$pdo->exec("INSERT INTO advisors VALUES ('A'); INSERT INTO project_risk_scores VALUES ('HIGH', '2026-09-19'), ('low', '2026-09-18'), ('unknown', '2026-09-20')");
+$pdo->exec("INSERT INTO advisors VALUES ('A')");
+$cache=$pdo->prepare('INSERT INTO app_state VALUES (?,?)');
+foreach (['HIGH'=>'2026-09-19','low'=>'2026-09-18','unknown'=>'2026-09-20'] as $level=>$at) $cache->execute(['ai-risk:'.$level,json_encode(['risk_level'=>$level,'calculated_at'=>$at])]);
 $runtime = ['students' => array_fill(0, 1000, ['password_hash' => 'never-transfer']), 'activities' => [], 'notifications' => [], 'approvals' => []];
 for ($i = 0; $i < 30; $i++) {
     $runtime['activities'][] = ['title' => 'Activity ' . $i, 'actor' => 'Tester', 'created_at' => '2026-09-19', 'private' => 'omit'];
@@ -43,6 +45,6 @@ dashboard_expect($result['activities'][0]['title'] === 'Activity 0', 'Preserve r
 dashboard_expect(!str_contains(json_encode($result), 'never-transfer'), 'Do not transfer runtime users');
 $pdo->exec("UPDATE app_state SET state_json='{}'");
 dashboard_expect(admin_dashboard_payload($pdo)['notifications'] === [], 'Missing collections');
-$pdo->exec('DROP TABLE project_risk_scores');
+$pdo->exec("DELETE FROM app_state WHERE state_key LIKE 'ai-risk:%'");
 dashboard_expect(admin_dashboard_payload($pdo)['risk_overview']['total'] === 0, 'Optional risk migration');
 echo "ADMIN_DASHBOARD_OK: bounded SQL summary / JSON projection (SQLite); MySQL still requires verification\n";

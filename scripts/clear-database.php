@@ -14,11 +14,10 @@ if (!in_array('--yes', $argv, true)) {
 
 $pdo = database_connection();
 $tables = [
-    'notification_reads', 'password_reset_tokens', 'php_sessions', 'user_sessions',
-    'advisor_followups', 'project_progress_history',
+    'notification_reads', 'password_reset_tokens', 'user_sessions',
     'group_messages', 'approvals', 'comments', 'documents',
     'advisor_invitations', 'group_invitations', 'project_group_members', 'project_groups',
-    'student_advisors', 'project_title_checks', 'project_risk_scores',
+    'student_advisors',
     'notifications', 'activities', 'audit_logs', 'projects', 'students', 'advisors',
 ];
 
@@ -41,6 +40,7 @@ try {
     foreach ($tables as $table) {
         $deleted[$table] = $pdo->exec("DELETE FROM `{$table}`");
     }
+    $pdo->exec("DELETE FROM app_state WHERE state_key LIKE 'ai-title:%' OR state_key LIKE 'ai-risk:%' OR state_key LIKE 'job-run:%'");
     $state = $pdo->prepare(
         'INSERT INTO app_state (state_key, state_json) VALUES (:state_key, :state_json)
          ON DUPLICATE KEY UPDATE state_json = VALUES(state_json)'
@@ -60,4 +60,4 @@ try {
 }
 
 echo 'DATABASE_APPLICATION_DATA_CLEARED rows=' . array_sum($deleted) . PHP_EOL;
-echo 'PRESERVED tables=settings,schema_migrations,app_state profile/settings' . PHP_EOL;
+echo 'PRESERVED tables=settings (including migration versions),app_state profile/settings' . PHP_EOL;

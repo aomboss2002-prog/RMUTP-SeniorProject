@@ -6,7 +6,7 @@ Vercel does not keep a CLI process alive, so Production uses request-scoped proc
 
 Set `CRON_SECRET` as a Production Secret and `AI_WEB_PROCESSING_ENABLED=true` in Vercel, then redeploy. Vercel automatically supplies this authorization header to the configured cron invocation. In Vercel `AI_TITLE_ENGINE=auto` selects `local-ngram-v1` immediately because localhost Ollama is not reachable from a serverless function. Local XAMPP continues to support Ollama and the continuous CLI worker.
 
-ระบบจะเพิ่มงานลง `project_title_checks` หลังนักศึกษาสร้างหรือแก้ไขชื่อโครงงาน แล้วตอบกลับหน้าเว็บทันที โดย Worker จะตรวจชื่อในภายหลังและบันทึกผลกลับ MySQL
+ระบบจะเพิ่มงานลง JSON คีย์ `ai-title:` ใน `app_state` หลังนักศึกษาสร้างหรือแก้ไขชื่อโครงงาน แล้วตอบกลับหน้าเว็บทันที โดย Worker จะตรวจชื่อในภายหลังและบันทึกผลกลับ MySQL
 
 ## การทำงานโดยไม่ใช้ Token
 
@@ -52,13 +52,13 @@ AI_TITLE_REVIEW_THRESHOLD=0.70
 
 ## ฐานข้อมูล Production
 
-ฐานข้อมูลใหม่จาก `database/database.sql` มีตารางพร้อมแล้ว สำหรับฐานข้อมูล Railway เดิมที่ปิด `DB_AUTO_MIGRATE` ให้นำเข้า `database/ai-title-check.sql` หนึ่งครั้ง
+ฐานข้อมูลใหม่จาก `database/database.sql` มี 20 ตารางแล้ว ฐานข้อมูลเดิมต้องใช้ [คู่มือ migration](TWENTY_TABLE_MIGRATION.md) ไม่ใช้ SQL สร้างตาราง AI แยก
 
 Vercel ไม่สามารถรักษา PHP Worker ที่ทำงานตลอดเวลาได้ จึงต้องรัน `ai-worker.bat` บนเครื่องที่เปิดอยู่ หรือใช้ Worker/VPS แยกที่เชื่อมต่อ MySQL ฐานเดียวกับเว็บไซต์
 
 ## Risk Score งานล่าช้าแบบไม่ใช้กำหนดส่ง
 
-Worker เดียวกันจะประเมิน `project_risk_scores` เป็นระยะโดยไม่ต้องระบุวันส่ง คะแนนมาจากสัญญาณที่ตรวจสอบได้ ได้แก่ จำนวนวันที่ไม่มีกิจกรรม ขั้นตอนที่หยุดนิ่ง เอกสารรอพิจารณา การถูกส่งกลับแก้ไข ความคืบหน้าเทียบค่ากลางของโครงงานอื่น และการมีอาจารย์ที่ปรึกษา
+Worker เดียวกันจะประเมิน JSON คีย์ `ai-risk:` ใน `app_state` เป็นระยะโดยไม่ต้องระบุวันส่ง คะแนนมาจากสัญญาณที่ตรวจสอบได้ ได้แก่ จำนวนวันที่ไม่มีกิจกรรม ขั้นตอนที่หยุดนิ่ง เอกสารรอพิจารณา การถูกส่งกลับแก้ไข ความคืบหน้าเทียบค่ากลางของโครงงานอื่น และการมีอาจารย์ที่ปรึกษา
 
 ```env
 AI_RISK_ENABLED=true
@@ -103,4 +103,4 @@ C:\xampp\php\php.exe tests\seed-workflow-data.php --clean
 
 ระดับคะแนนคือ ต่ำ `0-29`, เฝ้าระวัง `30-59`, สูง `60-79` และวิกฤต `80-100` โดยผลทุกครั้งมี `factors` และคะแนนรายเหตุผล ไม่ใช้ Ollama สร้างตัวเลข จึงสามารถตรวจสอบย้อนหลังได้
 
-สำหรับฐานข้อมูล Production เดิม ให้นำเข้า `database/ai-risk-score.sql` หนึ่งครั้งก่อนเปิด Worker เวอร์ชันนี้
+สำหรับ Production เดิม ให้ย้ายข้อมูลตาม [คู่มือ migration](TWENTY_TABLE_MIGRATION.md) ก่อนเปิด worker เวอร์ชันนี้

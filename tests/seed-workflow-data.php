@@ -21,6 +21,7 @@ function remove_workflow_demo_data(PDO $pdo): void
     $pdo->exec("DELETE FROM project_group_members WHERE group_id LIKE 'DEMOGRP%'");
     $pdo->exec("DELETE FROM project_groups WHERE id LIKE 'DEMOGRP%'");
     $pdo->exec("UPDATE students SET project_id = NULL WHERE id LIKE 'DEMOSTU%'");
+    $pdo->exec("DELETE FROM app_state WHERE (state_key LIKE 'ai-title:%' OR state_key LIKE 'ai-risk:%') AND JSON_UNQUOTE(JSON_EXTRACT(state_json, '$.project_id')) LIKE 'DEMOPRJ%'");
     $pdo->exec("DELETE FROM projects WHERE id LIKE 'DEMOPRJ%'");
     $pdo->exec("DELETE FROM students WHERE id LIKE 'DEMOSTU%'");
     $pdo->exec("DELETE FROM advisors WHERE id LIKE 'DEMOADV%'");
@@ -454,17 +455,9 @@ $duplicateTitle = 'ระบบติดตามความก้าวหน�
 $job = queue_project_title_check($duplicateProjectId, $duplicateTitle);
 if (!$job) throw new RuntimeException('Could not queue the workflow title test.');
 
-$claim = $pdo->prepare(
-    "UPDATE project_title_checks
-     SET status='processing', attempts=attempts+1, started_at=NOW(), error_message=NULL
-     WHERE id=:id AND status='queued'"
-);
-$claim->execute(['id' => $job['id']]);
-if ($claim->rowCount() === 1) {
-    $titleResult = process_project_title_check_job([
-        'id' => (int) $job['id'], 'project_id' => $duplicateProjectId,
-        'title' => $duplicateTitle, 'attempts' => 1,
-    ]);
+$claimed = claim_runtime_title((int) $job['id']);
+if ($claimed) {
+    $titleResult = process_project_title_check_job($claimed);
 } else {
     $deadline = microtime(true) + 60;
     do {

@@ -9,8 +9,8 @@ $requiredTables = [
     'user_sessions' => ['PRIMARY', 'idx_user_sessions_user', 'idx_user_sessions_expires'],
     'password_reset_tokens' => ['PRIMARY', 'token_hash', 'idx_password_reset_user', 'idx_password_reset_expires', 'idx_password_reset_ip_created'],
     'notification_reads' => ['PRIMARY', 'idx_notification_reads_reader'],
-    'project_progress_history' => ['PRIMARY', 'uq_project_progress_event_key', 'idx_project_progress_time', 'idx_document_progress_time'],
-    'advisor_followups' => ['PRIMARY', 'idx_advisor_followups_project_time', 'idx_advisor_followups_advisor', 'idx_advisor_followups_date'],
+    'activities' => ['PRIMARY', 'uq_activity_event', 'idx_activity_project_time', 'idx_activity_type_time'],
+    'comments' => ['PRIMARY', 'uq_comment_followup', 'idx_comment_project_time'],
 ];
 
 $tableStatement = $pdo->prepare(
@@ -49,10 +49,13 @@ if ((int) $foreignKeyStatement->fetchColumn() !== 1) {
 }
 $trackingForeignKeys = $pdo->query(
     "SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE
-     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ('project_progress_history','advisor_followups')
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ('activities','comments')
        AND REFERENCED_TABLE_NAME IS NOT NULL"
 )->fetchColumn();
 if ((int) $trackingForeignKeys < 4) $errors[] = 'Missing project tracking foreign keys';
+
+$inventory = $pdo->query("SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_TYPE='BASE TABLE'")->fetchAll(PDO::FETCH_COLUMN);
+if (count($inventory) !== 20 || array_diff(APPLICATION_TABLES, $inventory)) $errors[] = 'Expected exactly 20 application tables';
 
 if ($errors !== []) {
     fwrite(STDERR, implode(PHP_EOL, $errors) . PHP_EOL);

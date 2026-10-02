@@ -33,16 +33,7 @@ $runId = null;
 $runStarted = microtime(true);
 try {
     $pdo = database_connection();
-    $pdo->exec("CREATE TABLE IF NOT EXISTS system_job_runs (
-        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, job_name VARCHAR(80) NOT NULL,
-        status ENUM('started','success','failed') NOT NULL DEFAULT 'started', started_at DATETIME NOT NULL,
-        finished_at DATETIME NULL, duration_ms INT UNSIGNED NULL, summary_json TEXT NULL,
-        error_code VARCHAR(80) NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        INDEX idx_system_job_name_started (job_name, started_at), INDEX idx_system_job_status_started (status, started_at)
-    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-    $startStatement = $pdo->prepare("INSERT INTO system_job_runs (job_name, status, started_at) VALUES ('ai-web-worker', 'started', NOW())");
-    $startStatement->execute();
-    $runId = (int) $pdo->lastInsertId();
+    $runId = runtime_job_start($pdo);
     // Keep each serverless invocation short. Remaining work is picked up by
     // the next web request, local worker, or scheduled invocation.
     for ($index = 0; $index < 10; $index++) {
@@ -70,8 +61,7 @@ try {
     if ($runId) {
         $duration = (int) round((microtime(true) - $runStarted) * 1000);
         $summary = json_encode(['title_processed' => $titleSummary['processed'], 'title_failed' => $titleSummary['failed'], 'risk_processed' => (int) ($riskSummary['processed'] ?? 0)], JSON_UNESCAPED_SLASHES);
-        $finish = $pdo->prepare("UPDATE system_job_runs SET status='success', finished_at=NOW(), duration_ms=:duration, summary_json=:summary WHERE id=:id");
-        $finish->execute(['duration' => $duration, 'summary' => $summary, 'id' => $runId]);
+        runtime_job_finish($pdo, $runId, 'success', $duration, $summary);
     }
     echo json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 } catch (Throwable $error) {
@@ -79,8 +69,7 @@ try {
     if ($runId && isset($pdo) && $pdo instanceof PDO) {
         try {
             $code = $error instanceof PDOException ? 'database_error' : 'worker_error';
-            $finish = $pdo->prepare("UPDATE system_job_runs SET status='failed', finished_at=NOW(), duration_ms=:duration, error_code=:code WHERE id=:id");
-            $finish->execute(['duration' => (int) round((microtime(true) - $runStarted) * 1000), 'code' => $code, 'id' => $runId]);
+            runtime_job_finish($pdo, $runId, 'failed', (int) round((microtime(true) - $runStarted) * 1000), null, $code);
         } catch (Throwable) { /* Keep the original worker failure response safe. */ }
     }
     http_response_code(500);

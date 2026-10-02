@@ -14,6 +14,7 @@ function remove_ai_test_projects(PDO $pdo): void
 {
     $pdo->exec("DELETE FROM documents WHERE project_id LIKE 'AITESTPRJ%'");
     $pdo->exec("UPDATE students SET project_id = NULL WHERE id LIKE 'AITESTSTU%'");
+    $pdo->exec("DELETE FROM app_state WHERE (state_key LIKE 'ai-title:%' OR state_key LIKE 'ai-risk:%') AND JSON_UNQUOTE(JSON_EXTRACT(state_json, '$.project_id')) LIKE 'AITESTPRJ%'");
     $pdo->exec("DELETE FROM projects WHERE id LIKE 'AITESTPRJ%'");
     $pdo->exec("DELETE FROM students WHERE id LIKE 'AITESTSTU%'");
     $pdo->exec("DELETE FROM advisors WHERE id = 'AITESTADV01'");
@@ -168,7 +169,7 @@ try {
 $riskSummary = process_project_risk_scores(500);
 $riskRows = $pdo->query(
     "SELECT risk_level, COUNT(*) AS total
-     FROM project_risk_scores
+     FROM " . runtime_records_sql('risk') . " r
      WHERE project_id LIKE 'AITESTPRJ%'
      GROUP BY risk_level"
 )->fetchAll(PDO::FETCH_KEY_PAIR);

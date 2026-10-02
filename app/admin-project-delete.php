@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/runtime-records.php';
 
 /** Remove only records explicitly associated with this project/document set. */
 function admin_project_deleted_state(array $data, string $id, array $documentIds): array
@@ -30,6 +31,7 @@ function admin_project_delete(PDO $pdo, string $id): array
     if ($id === '' || strlen($id) > 20) throw new InvalidArgumentException('รหัสโครงงานไม่ถูกต้อง');
     $pdo->beginTransaction();
     try {
+        runtime_sequence($pdo, 'title', false);
         $stateQuery = $pdo->query("SELECT state_json FROM app_state WHERE state_key='runtime' FOR UPDATE");
         $data = json_decode((string) $stateQuery->fetchColumn(), true, 512, JSON_THROW_ON_ERROR);
         if (!is_array($data)) throw new RuntimeException('Runtime state unavailable');
@@ -63,9 +65,10 @@ function admin_project_delete(PDO $pdo, string $id): array
         }
         $delete = $pdo->prepare('DELETE FROM documents WHERE id=? AND (project_id=? OR project_id IS NULL)');
         foreach (array_keys($documents) as $docId) $delete->execute([$docId, $id]);
-        foreach (['project_title_checks', 'project_risk_scores', 'project_progress_history', 'advisor_followups'] as $table) {
+        foreach (['activities', 'comments'] as $table) {
             $pdo->prepare("DELETE FROM $table WHERE project_id=?")->execute([$id]);
         }
+        $pdo->prepare("DELETE FROM app_state WHERE (state_key LIKE 'ai-title:%' OR state_key LIKE 'ai-risk:%') AND JSON_UNQUOTE(JSON_EXTRACT(state_json, '$.project_id'))=?")->execute([$id]);
         foreach (['students', 'project_groups'] as $table) $pdo->prepare("UPDATE $table SET project_id=NULL WHERE project_id=?")->execute([$id]);
         $pdo->prepare('DELETE FROM projects WHERE id=?')->execute([$id]);
         $pdo->prepare("UPDATE app_state SET state_json=? WHERE state_key='runtime'")->execute([json_encode($after, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)]);

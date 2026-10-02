@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/consolidated-schema.php';
 
 /** Read-only, bounded snapshot for the admin live monitor. No runtime store scan. */
 function website_monitor_snapshot(PDO $pdo): array
@@ -22,7 +23,7 @@ function website_monitor_snapshot(PDO $pdo): array
     $activity = [];
     try {
         $activity = $pdo->query('SELECT id, event_type, stage, chapter, actor_name, occurred_at, current_progress
-            FROM project_progress_history ORDER BY occurred_at DESC, id DESC LIMIT 6')->fetchAll(PDO::FETCH_ASSOC);
+            FROM ' . progress_history_sql() . ' h ORDER BY occurred_at DESC, id DESC LIMIT 6')->fetchAll(PDO::FETCH_ASSOC);
     } catch (PDOException) {
         // Existing installations may not have tracking history. Do not fabricate events.
         $activityAvailable = false;

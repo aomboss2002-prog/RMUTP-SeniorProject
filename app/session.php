@@ -6,6 +6,7 @@ final class DatabaseSessionHandler implements SessionHandlerInterface, SessionUp
 {
     /** @var array<string, int> */
     private array $knownExpirations = [];
+    private array $anonymous = [];
 
     private function connection(): PDO
     {
@@ -20,13 +21,14 @@ final class DatabaseSessionHandler implements SessionHandlerInterface, SessionUp
     public function read(string $id): string|false
     {
         $statement = $this->connection()->prepare(
-            'SELECT session_data, UNIX_TIMESTAMP(expires_at) AS expires_at
-             FROM php_sessions WHERE session_id = :id AND expires_at > NOW()'
+            'SELECT session_data, user_type, UNIX_TIMESTAMP(expires_at) AS expires_at
+             FROM user_sessions WHERE session_id = :id AND expires_at > NOW()'
         );
         $statement->execute(['id' => $id]);
         $row = $statement->fetch();
         if (!is_array($row)) return '';
         $this->knownExpirations[$id] = (int) ($row['expires_at'] ?? 0);
+        $this->anonymous[$id] = empty($row['user_type']);
         return (string) ($row['session_data'] ?? '');
     }
 
@@ -34,13 +36,18 @@ final class DatabaseSessionHandler implements SessionHandlerInterface, SessionUp
     {
         $lifetime = max(1800, (int) ini_get('session.gc_maxlifetime'));
         $expiresAt = time() + $lifetime;
+        $user = $_SESSION['advisor_user'] ?? $_SESSION['app_user'] ?? [];
+        $role = isset($_SESSION['advisor_user']) ? 'advisor' : ($user['role'] ?? null);
+        if (!in_array($role, ['admin','advisor','student'], true)) $role = null;
         $written = $this->connection()->prepare(
-            'INSERT INTO php_sessions (session_id, session_data, expires_at)
-             VALUES (:id, :data, :expires_at)
-             ON DUPLICATE KEY UPDATE session_data = VALUES(session_data), expires_at = VALUES(expires_at)'
+            'INSERT INTO user_sessions (session_id, session_data, expires_at, last_activity_at, user_type, user_id)
+             VALUES (:id, :data, :expires_at, NOW(), :user_type, :user_id)
+             ON DUPLICATE KEY UPDATE session_data = VALUES(session_data), expires_at = VALUES(expires_at), last_activity_at = NOW(), user_type = VALUES(user_type), user_id = VALUES(user_id)'
         )->execute([
             'id' => $id,
             'data' => $data,
+            'user_type' => $role,
+            'user_id' => $role === null ? null : (string) ($user['id'] ?? ''),
             'expires_at' => date('Y-m-d H:i:s', $expiresAt),
         ]);
         if ($written) $this->knownExpirations[$id] = $expiresAt;
@@ -49,13 +56,13 @@ final class DatabaseSessionHandler implements SessionHandlerInterface, SessionUp
 
     public function destroy(string $id): bool
     {
-        return $this->connection()->prepare('DELETE FROM php_sessions WHERE session_id = :id')
+        return $this->connection()->prepare('DELETE FROM user_sessions WHERE session_id = :id')
             ->execute(['id' => $id]);
     }
 
     public function gc(int $max_lifetime): int|false
     {
-        $statement = $this->connection()->prepare('DELETE FROM php_sessions WHERE expires_at <= NOW()');
+        $statement = $this->connection()->prepare('DELETE FROM user_sessions WHERE expires_at <= NOW()');
         $statement->execute();
         return $statement->rowCount();
     }
@@ -64,7 +71,7 @@ final class DatabaseSessionHandler implements SessionHandlerInterface, SessionUp
     {
         if (($this->knownExpirations[$id] ?? 0) > time()) return true;
         $statement = $this->connection()->prepare(
-            'SELECT UNIX_TIMESTAMP(expires_at) FROM php_sessions
+            'SELECT UNIX_TIMESTAMP(expires_at) FROM user_sessions
              WHERE session_id = :id AND expires_at > NOW()'
         );
         $statement->execute(['id' => $id]);
@@ -78,11 +85,12 @@ final class DatabaseSessionHandler implements SessionHandlerInterface, SessionUp
     {
         // Avoid a remote UPDATE on every read-only request. Refreshing when
         // fewer than ten minutes remain still keeps active sessions alive.
+        if (($this->anonymous[$id] ?? false) && (!empty($_SESSION['app_user']) || !empty($_SESSION['advisor_user']))) return $this->write($id, $data);
         if (($this->knownExpirations[$id] ?? 0) > time() + 600) return true;
         $lifetime = max(1800, (int) ini_get('session.gc_maxlifetime'));
         $expiresAt = time() + $lifetime;
         $updated = $this->connection()->prepare(
-            'UPDATE php_sessions SET expires_at = :expires_at WHERE session_id = :id'
+            'UPDATE user_sessions SET expires_at = :expires_at, last_activity_at = NOW() WHERE session_id = :id'
         )->execute([
             'id' => $id,
             'expires_at' => date('Y-m-d H:i:s', $expiresAt),

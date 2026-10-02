@@ -1,13 +1,14 @@
 <?php
 declare(strict_types=1);
 require_once dirname(__DIR__) . '/app/store.php';
+require_once dirname(__DIR__) . '/app/advisor-followup-store.php';
 if (PHP_SAPI !== 'cli') exit(1);
 $clean = in_array('--clean', $argv, true);
 $pdo = database_connection(); ensure_project_tracking_schema($pdo); $data = load_data();
 $qa = static fn(array $row): bool => str_starts_with((string) ($row['id'] ?? ''), 'QAT');
 foreach (['documents','groups','projects','students','advisors'] as $collection) $data[$collection] = array_values(array_filter($data[$collection] ?? [], static fn(array $row): bool => !$qa($row)));
 save_data($data);
-$pdo->exec("DELETE FROM advisor_followups WHERE project_id LIKE 'QAT%'");
+$pdo->exec("DELETE FROM comments WHERE comment_type='advisor_followup' AND project_id LIKE 'QAT%'");
 $pdo->exec("DELETE FROM project_groups WHERE id LIKE 'QAT%'");
 $pdo->exec("DELETE FROM projects WHERE id LIKE 'QAT%'");
 $pdo->exec("DELETE FROM students WHERE id LIKE 'QAT%'");
@@ -24,7 +25,7 @@ $add('QATDOC1','proposal',null,date('Y-m-d H:i:s',strtotime('-35 days'))); $stat
 $add('QATDOC2','draft',1,date('Y-m-d H:i:s',strtotime('-25 days'))); $status('QATDOC2','Approved',date('Y-m-d H:i:s',strtotime('-23 days')));
 $add('QATDOC3','draft',2,date('Y-m-d H:i:s',strtotime('-16 days'))); $status('QATDOC3','Approved',date('Y-m-d H:i:s',strtotime('-14 days')));
 $add('QATDOC4','draft',3,date('Y-m-d H:i:s',strtotime('-5 days'))); $status('QATDOC4','NeedsRevision',date('Y-m-d H:i:s',strtotime('-3 days')));
-$stmt=$pdo->prepare('INSERT INTO advisor_followups(project_id,advisor_id,note,issue,next_action,followup_at) VALUES(?,?,?,?,?,?)');
-$stmt->execute(['QATPRJ1','QATADV1','ตรวจความคืบหน้า Draft บทที่ 3 แล้ว โครงสร้างโดยรวมชัดเจน','แผนภาพขั้นตอนยังไม่สอดคล้องกับขอบเขตระบบ','ปรับแผนภาพและส่ง Draft บทที่ 3 อีกครั้ง',date('Y-m-d',strtotime('+7 days'))]);
-$stmt->execute(['QATPRJ1','QATADV1','ทบทวน Proposal และกำหนดแนวทางการพัฒนาร่วมกัน','','เริ่มจัดทำ Draft บทที่ 1',null]);
+$saveFollowup = static function(array $v) use ($pdo): void { save_advisor_followup($pdo, $v[0], $v[1], 'POST', 0, ['note'=>$v[2], 'issue'=>$v[3], 'next_action'=>$v[4], 'followup_at'=>$v[5]]); };
+$saveFollowup(['QATPRJ1','QATADV1','ตรวจความคืบหน้า Draft บทที่ 3 แล้ว โครงสร้างโดยรวมชัดเจน','แผนภาพขั้นตอนยังไม่สอดคล้องกับขอบเขตระบบ','ปรับแผนภาพและส่ง Draft บทที่ 3 อีกครั้ง',date('Y-m-d',strtotime('+7 days'))]);
+$saveFollowup(['QATPRJ1','QATADV1','ทบทวน Proposal และกำหนดแนวทางการพัฒนาร่วมกัน','','เริ่มจัดทำ Draft บทที่ 1',null]);
 echo "PROJECT_TRACKING_QA_READY advisor=qa.advisor@rmutp.ac.th password=Qa@2026 student=QATSTU1\n";

@@ -1,53 +1,14 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/consolidated-schema.php';
+require_once __DIR__ . '/runtime-records.php';
 
 /** Project tracking is derived from workflow documents; it never owns progress state. */
 
 function ensure_project_tracking_schema(PDO $pdo): void
 {
-    static $ready = false;
-    if ($ready) return;
-    $pdo->exec("CREATE TABLE IF NOT EXISTS project_progress_history (
-        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-        project_id VARCHAR(20) NOT NULL,
-        document_id VARCHAR(20) NULL,
-        event_type VARCHAR(40) NOT NULL,
-        stage VARCHAR(30) NOT NULL,
-        chapter TINYINT UNSIGNED NULL,
-        previous_progress TINYINT UNSIGNED NOT NULL DEFAULT 0,
-        current_progress TINYINT UNSIGNED NOT NULL DEFAULT 0,
-        actor_type VARCHAR(20) NOT NULL DEFAULT 'system',
-        actor_id VARCHAR(40) NOT NULL DEFAULT 'system',
-        actor_name VARCHAR(180) NOT NULL DEFAULT 'System',
-        event_key CHAR(64) NOT NULL,
-        metadata_json JSON NULL,
-        occurred_at DATETIME NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE KEY uq_project_progress_event_key (event_key),
-        INDEX idx_project_progress_time (project_id, occurred_at, id),
-        INDEX idx_document_progress_time (document_id, occurred_at, id),
-        CONSTRAINT fk_progress_history_project FOREIGN KEY (project_id) REFERENCES projects(id) ON UPDATE CASCADE ON DELETE CASCADE,
-        CONSTRAINT fk_progress_history_document FOREIGN KEY (document_id) REFERENCES documents(id) ON UPDATE CASCADE ON DELETE SET NULL,
-        CONSTRAINT chk_progress_history_previous CHECK (previous_progress BETWEEN 0 AND 100),
-        CONSTRAINT chk_progress_history_current CHECK (current_progress BETWEEN 0 AND 100)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-    $pdo->exec("CREATE TABLE IF NOT EXISTS advisor_followups (
-        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-        project_id VARCHAR(20) NOT NULL,
-        advisor_id VARCHAR(20) NULL,
-        note VARCHAR(1000) NOT NULL,
-        issue VARCHAR(1000) NOT NULL DEFAULT '',
-        next_action VARCHAR(1000) NOT NULL DEFAULT '',
-        followup_at DATE NULL,
-        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        INDEX idx_advisor_followups_project_time (project_id, created_at, id),
-        INDEX idx_advisor_followups_advisor (advisor_id, created_at),
-        INDEX idx_advisor_followups_date (followup_at),
-        CONSTRAINT fk_advisor_followups_project FOREIGN KEY (project_id) REFERENCES projects(id) ON UPDATE CASCADE ON DELETE CASCADE,
-        CONSTRAINT fk_advisor_followups_advisor FOREIGN KEY (advisor_id) REFERENCES advisors(id) ON UPDATE CASCADE ON DELETE SET NULL
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-    $ready = true;
+    // Prepared by installation / explicit migration, never perform DDL during a request.
+    $pdo->query('SELECT activity_type, old_value, new_value FROM activities LIMIT 0');
 }
 
 function tracking_actor(): array
@@ -158,21 +119,29 @@ function prepare_project_tracking_events(array $previous, array &$current): arra
 function persist_project_tracking_events(PDO $pdo, array $events): void
 {
     if (!$events) return;
-    // MySQL DDL implicitly commits an active transaction. The schema is already
-    // prepared by database_connection(), so only perform the fallback check when
-    // this helper is called independently outside a transaction.
-    if (!$pdo->inTransaction()) ensure_project_tracking_schema($pdo);
-    $statement = $pdo->prepare("INSERT IGNORE INTO project_progress_history
-        (project_id, document_id, event_type, stage, chapter, previous_progress, current_progress,
-         actor_type, actor_id, actor_name, event_key, metadata_json, occurred_at)
-        VALUES (:project_id, :document_id, :event_type, :stage, :chapter, :previous_progress, :current_progress,
-         :actor_type, :actor_id, :actor_name, :event_key, :metadata_json, :occurred_at)");
-    foreach ($events as $event) {
-        $metadata = $event['metadata'] ?? [];
-        unset($event['metadata']);
-        $event['metadata_json'] = json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        $statement->execute($event);
-    }
+    $owns = !$pdo->inTransaction();
+    if ($owns) $pdo->beginTransaction();
+    try {
+        // Reserve a batch once; preserve numeric history IDs and same-second ordering.
+        $sequence = runtime_sequence($pdo, 'progress', false);
+        $pdo->prepare('UPDATE app_state SET state_json=? WHERE state_key=?')
+            ->execute([(string) ($sequence + count($events)), 'sequence:progress']);
+        $statement = $pdo->prepare("INSERT INTO activities
+            (id, progress_id, title, actor, activity_type, project_id, document_id, event_type, stage, chapter, old_value, new_value,
+             actor_type, actor_id, event_key, metadata_json, occurred_at)
+            VALUES (:id, :progress_id, :title, :actor_name, 'progress_updated', :project_id, :document_id, :event_type, :stage, :chapter,
+             :previous_progress, :current_progress, :actor_type, :actor_id, :event_key, :metadata_json, :occurred_at)
+            ON DUPLICATE KEY UPDATE event_key=VALUES(event_key)");
+        foreach ($events as $event) {
+            $event['progress_id'] = ++$sequence;
+            $event['id'] = 'PG' . str_pad(base_convert((string) $sequence, 10, 36), 18, '0', STR_PAD_LEFT);
+            $event['title'] = $event['event_type'];
+            $event['metadata_json'] = json_encode($event['metadata'] ?? [], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+            unset($event['metadata']);
+            $statement->execute($event);
+        }
+        if ($owns) $pdo->commit();
+    } catch (Throwable $error) { if ($owns && $pdo->inTransaction()) $pdo->rollBack(); throw $error; }
 }
 
 function sync_workflow_documents_to_database(PDO $pdo, array $current, array $previous): void
@@ -209,7 +178,7 @@ function project_tracking_history(string $projectId, bool $latestOnly = false): 
     $pdo = database_connection();
     $statement = $pdo->prepare('SELECT id, project_id, document_id, event_type, stage, chapter,
         previous_progress, current_progress, actor_type, actor_id, actor_name, occurred_at
-        FROM project_progress_history WHERE project_id = :project_id ORDER BY '
+        FROM ' . progress_history_sql() . ' h WHERE project_id = :project_id ORDER BY '
         . ($latestOnly ? 'occurred_at DESC, id DESC LIMIT 1' : 'occurred_at ASC, id ASC'));
     $statement->execute(['project_id' => $projectId]);
     return $statement->fetchAll() ?: [];
@@ -221,7 +190,7 @@ function project_followups(string $projectId): array
     $pdo = database_connection();
     $statement = $pdo->prepare('SELECT f.id, f.project_id, f.advisor_id, f.note, f.issue, f.next_action,
         f.followup_at, f.created_at, f.updated_at, COALESCE(a.name, \'Former advisor\') AS advisor_name
-        FROM advisor_followups f LEFT JOIN advisors a ON a.id = f.advisor_id
+        FROM ' . followups_sql() . ' f LEFT JOIN advisors a ON a.id = f.advisor_id
         WHERE f.project_id = :project_id ORDER BY f.created_at DESC, f.id DESC');
     $statement->execute(['project_id' => $projectId]);
     return $statement->fetchAll() ?: [];

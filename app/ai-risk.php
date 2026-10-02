@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/runtime-records.php';
 
 /**
  * Explainable, deadline-free project delay risk scoring.
@@ -13,13 +14,7 @@ function latest_project_risk_score(string $projectId): ?array
 {
     if ($projectId === '') return null;
     // Read the last worker result only. Page views must never run a risk scan.
-    $statement = database_connection()->prepare(
-        'SELECT project_id, score, risk_level, confidence, stage, progress_snapshot,
-                last_activity_at, factors_json, recommendation, engine, calculated_at
-         FROM project_risk_scores WHERE project_id = :project_id LIMIT 1'
-    );
-    $statement->execute(['project_id' => $projectId]);
-    $row = $statement->fetch();
+    $row = runtime_record_get(database_connection(), 'risk', $projectId);
     if (!is_array($row)) return null;
     $factors = json_decode((string) ($row['factors_json'] ?? ''), true);
     $row['factors'] = is_array($factors) ? $factors : [];
@@ -39,15 +34,8 @@ function refresh_project_risk_score_if_stale(string $projectId): void
     if (!system_setting_enabled('ai_risk_enabled')) return;
     $pdo = database_connection();
     $interval = max(60, (int) ai_title_config_value('AI_RISK_SCAN_INTERVAL', '300'));
-    $stale = $pdo->prepare(
-        'SELECT COUNT(*) FROM project_risk_scores
-         WHERE project_id = :project_id
-           AND calculated_at >= DATE_SUB(NOW(), INTERVAL :age SECOND)'
-    );
-    $stale->bindValue(':project_id', $projectId);
-    $stale->bindValue(':age', $interval, PDO::PARAM_INT);
-    $stale->execute();
-    if ((int) $stale->fetchColumn() > 0) return;
+    $cached = runtime_record_get($pdo, 'risk', $projectId);
+    if ($cached && strtotime($cached['calculated_at']) >= time() - $interval) return;
 
     $statement = $pdo->prepare(
         "SELECT id, title, student_id, advisor_id, status, progress, updated_at
@@ -202,26 +190,18 @@ function calculate_project_risk(array $project, ?float $medianProgress, ?array $
 
 function save_project_risk_score(array $risk): void
 {
-    $statement = database_connection()->prepare(
-        'INSERT INTO project_risk_scores
-         (project_id, score, risk_level, confidence, stage, progress_snapshot, last_activity_at,
-          factors_json, recommendation, engine, calculated_at)
-         VALUES
-         (:project_id, :score, :risk_level, :confidence, :stage, :progress_snapshot, :last_activity_at,
-          :factors_json, :recommendation, :engine, NOW())
-         ON DUPLICATE KEY UPDATE score=VALUES(score), risk_level=VALUES(risk_level),
-          confidence=VALUES(confidence), stage=VALUES(stage), progress_snapshot=VALUES(progress_snapshot),
-          last_activity_at=VALUES(last_activity_at), factors_json=VALUES(factors_json),
-          recommendation=VALUES(recommendation), engine=VALUES(engine), calculated_at=NOW()'
-    );
-    $statement->execute([
-        'project_id' => $risk['project_id'], 'score' => $risk['score'],
-        'risk_level' => $risk['risk_level'], 'confidence' => $risk['confidence'],
-        'stage' => $risk['stage'], 'progress_snapshot' => $risk['progress_snapshot'],
-        'last_activity_at' => $risk['last_activity_at'],
-        'factors_json' => json_encode($risk['factors'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR),
-        'recommendation' => $risk['recommendation'], 'engine' => $risk['engine'],
-    ]);
+    $risk['factors_json'] = json_encode($risk['factors'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+    unset($risk['factors']);
+    $risk['calculated_at'] = date('Y-m-d H:i:s');
+    $pdo = database_connection();
+    $owns = !$pdo->inTransaction();
+    if ($owns) $pdo->beginTransaction();
+    try {
+        $parent = $pdo->prepare('SELECT id FROM projects WHERE id=? FOR UPDATE');
+        $parent->execute([$risk['project_id']]);
+        if ($parent->fetchColumn()) runtime_record_put($pdo, 'risk', (string) $risk['project_id'], $risk);
+        if ($owns) $pdo->commit();
+    } catch (Throwable $error) { if ($owns && $pdo->inTransaction()) $pdo->rollBack(); throw $error; }
 }
 
 function process_project_risk_scores(int $limit = 100): array
@@ -233,9 +213,9 @@ function process_project_risk_scores(int $limit = 100): array
         "SELECT projects.id, projects.title, projects.student_id, projects.advisor_id,
                 projects.status, projects.progress, projects.updated_at
          FROM projects
-         LEFT JOIN project_risk_scores ON project_risk_scores.project_id = projects.id
-         ORDER BY project_risk_scores.calculated_at IS NULL DESC,
-                  project_risk_scores.calculated_at ASC, projects.id ASC
+         LEFT JOIN app_state risk_cache ON risk_cache.state_key = CONCAT('ai-risk:', projects.id)
+         ORDER BY JSON_UNQUOTE(JSON_EXTRACT(risk_cache.state_json, '$.calculated_at')) IS NULL DESC,
+                  JSON_UNQUOTE(JSON_EXTRACT(risk_cache.state_json, '$.calculated_at')) ASC, projects.id ASC
          LIMIT {$limit}"
     )->fetchAll();
     $median = active_project_median_progress($pdo);

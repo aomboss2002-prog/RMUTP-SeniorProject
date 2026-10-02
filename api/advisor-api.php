@@ -675,28 +675,13 @@ if (preg_match('#^project/([^/]+)/followups(?:/([0-9]+))?$#', $endpoint, $matche
     $pdo = shared_database_connection();
     ensure_project_tracking_schema($pdo);
     if ($method === 'GET') respond(['success' => true, 'data' => project_followups($projectId)]);
-    if ($method === 'POST') {
-        $values = validated_followup_payload(input_json());
-        $statement = $pdo->prepare('INSERT INTO advisor_followups (project_id, advisor_id, note, issue, next_action, followup_at)
-            VALUES (:project_id, :advisor_id, :note, :issue, :next_action, :followup_at)');
-        $statement->execute(array_merge($values, ['project_id' => $projectId, 'advisor_id' => $advisorId]));
+    require_once __DIR__ . '/../app/advisor-followup-store.php';
+    if (in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'], true)) {
+        if ($method !== 'POST' && $followupId < 1) respond(['success' => false, 'message' => 'Follow-up not found.'], 404);
+        $values = $method === 'DELETE' ? [] : validated_followup_payload(input_json());
+        try { save_advisor_followup($pdo, $projectId, $advisorId, $method, $followupId, $values); }
+        catch (DomainException $error) { respond(['success' => false, 'message' => $error->getMessage()], 403); }
         respond(['success' => true, 'data' => project_followups($projectId), 'message' => 'Follow-up saved.']);
-    }
-    if ($followupId < 1) respond(['success' => false, 'message' => 'Follow-up not found.'], 404);
-    $owner = $pdo->prepare('SELECT advisor_id FROM advisor_followups WHERE id = :id AND project_id = :project_id');
-    $owner->execute(['id' => $followupId, 'project_id' => $projectId]);
-    if ((string) ($owner->fetchColumn() ?: '') !== $advisorId) respond(['success' => false, 'message' => 'Only the author can modify this follow-up.'], 403);
-    if (in_array($method, ['PUT', 'PATCH'], true)) {
-        $values = validated_followup_payload(input_json());
-        $statement = $pdo->prepare('UPDATE advisor_followups SET note=:note, issue=:issue, next_action=:next_action,
-            followup_at=:followup_at WHERE id=:id AND project_id=:project_id AND advisor_id=:advisor_id');
-        $statement->execute(array_merge($values, ['id' => $followupId, 'project_id' => $projectId, 'advisor_id' => $advisorId]));
-        respond(['success' => true, 'data' => project_followups($projectId), 'message' => 'Follow-up updated.']);
-    }
-    if ($method === 'DELETE') {
-        $pdo->prepare('DELETE FROM advisor_followups WHERE id=:id AND project_id=:project_id AND advisor_id=:advisor_id')
-            ->execute(['id' => $followupId, 'project_id' => $projectId, 'advisor_id' => $advisorId]);
-        respond(['success' => true, 'data' => project_followups($projectId), 'message' => 'Follow-up deleted.']);
     }
     respond(['success' => false, 'message' => 'Method not allowed.'], 405);
 }

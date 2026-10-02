@@ -32,12 +32,9 @@ try {
             $result = latest_project_title_check($projectId, (int) $queued['id']) ?? [];
         } while (microtime(true) < $deadline && !in_array($result['status'] ?? '', ['completed', 'failed'], true));
     } else {
-        $pdo->prepare("UPDATE project_title_checks SET status='processing', attempts=1, started_at=NOW() WHERE id=:id")
-            ->execute(['id' => $queued['id']]);
-        $result = process_project_title_check_job([
-            'id' => $queued['id'], 'project_id' => $projectId,
-            'title' => $candidateTitle, 'attempts' => 1,
-        ]);
+        $claimed = claim_runtime_title((int) $queued['id']);
+        if (!$claimed) throw new RuntimeException('Claim failed');
+        $result = process_project_title_check_job($claimed);
     }
     if (($result['status'] ?? '') !== 'completed') throw new RuntimeException('Job did not complete.');
     if ((float) ($result['max_similarity'] ?? 0) < 0.99) throw new RuntimeException('Exact duplicate was not detected.');
@@ -45,6 +42,7 @@ try {
     echo "AI_TITLE_WORKER_OK score=" . number_format((float) $result['max_similarity'] * 100, 1)
         . "% engine=" . ($result['engine'] ?? '') . PHP_EOL;
 } finally {
+    $pdo->prepare("DELETE FROM app_state WHERE state_key LIKE 'ai-title:%' AND JSON_UNQUOTE(JSON_EXTRACT(state_json, '$.project_id'))=?")->execute([$projectId]);
     $pdo->prepare('DELETE FROM projects WHERE id = :id')->execute(['id' => $projectId]);
     $pdo->prepare('DELETE FROM projects WHERE id = :id')->execute(['id' => $candidateId]);
 }

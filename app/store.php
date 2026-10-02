@@ -153,7 +153,7 @@ function ensure_database_foreign_key(
 
 function ensure_primary_database_schema(PDO $pdo): void
 {
-    $requiredTables = ['students', 'projects', 'documents', 'notifications', 'activities', 'comments', 'approvals', 'settings', 'project_title_checks', 'project_risk_scores'];
+    $requiredTables = ['students', 'projects', 'documents', 'notifications', 'activities', 'comments', 'approvals', 'settings', 'app_state'];
     $placeholders = implode(',', array_fill(0, count($requiredTables), '?'));
     $statement = $pdo->prepare(
         "SELECT COUNT(*) FROM information_schema.TABLES
@@ -214,63 +214,16 @@ function normalize_database_collations(PDO $pdo): void
 
 function database_schema_is_current(PDO $pdo, string $version): bool
 {
-    $pdo->exec("CREATE TABLE IF NOT EXISTS schema_migrations (
-        version VARCHAR(80) PRIMARY KEY,
-        applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-
-    $statement = $pdo->prepare('SELECT COUNT(*) FROM schema_migrations WHERE version = :version');
-    $statement->execute(['version' => $version]);
-    if ((int) $statement->fetchColumn() > 0) {
-        return true;
-    }
-
-    // Older deployments may have completed the migration before the marker
-    // table existed. Detect that state once instead of repeating dozens of
-    // information_schema queries on every serverless request.
-    $relationCount = (int) $pdo->query(
-        "SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE
-         WHERE TABLE_SCHEMA = DATABASE()
-           AND REFERENCED_TABLE_NAME IS NOT NULL
-           AND TABLE_NAME IN (
-               'students', 'projects', 'project_groups', 'project_group_members',
-               'student_advisors', 'advisor_invitations', 'group_invitations',
-               'group_messages', 'documents', 'comments', 'approvals',
-               'notifications', 'notification_reads'
-           )"
-    )->fetchColumn();
-    $requiredIndexes = [
-        'idx_advisor_invitations_group', 'idx_advisor_invitations_student',
-        'idx_advisor_invitations_advisor_status', 'idx_group_invitations_group',
-        'idx_group_invitations_student_status', 'idx_group_invitations_sender',
-        'idx_documents_stage_status', 'idx_documents_uploaded',
-        'idx_notifications_group_created', 'idx_notifications_student_created',
-        'idx_notifications_advisor_created', 'idx_comments_student_created',
-        'idx_comments_document_created', 'idx_approvals_student_created',
-        'idx_approvals_document_created', 'idx_approvals_group_created',
-        'idx_approvals_reviewer_status', 'idx_password_reset_ip_created',
-    ];
-    $indexPlaceholders = implode(',', array_fill(0, count($requiredIndexes), '?'));
-    $indexStatement = $pdo->prepare(
-        "SELECT COUNT(DISTINCT INDEX_NAME) FROM information_schema.STATISTICS
-         WHERE TABLE_SCHEMA = DATABASE() AND INDEX_NAME IN ({$indexPlaceholders})"
-    );
-    $indexStatement->execute($requiredIndexes);
-    $requiredIndexCount = (int) $indexStatement->fetchColumn();
-    if ($version === '20260830_02_optional_student_phone'
-        && $relationCount >= 32
-        && $requiredIndexCount === count($requiredIndexes)) {
-        $insert = $pdo->prepare('INSERT IGNORE INTO schema_migrations (version) VALUES (:version)');
-        $insert->execute(['version' => $version]);
-        return true;
-    }
-    return false;
+    $pdo->exec("CREATE TABLE IF NOT EXISTS settings (setting_key VARCHAR(80) PRIMARY KEY, setting_value VARCHAR(255) NOT NULL) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    $statement = $pdo->prepare('SELECT setting_value FROM settings WHERE setting_key=?');
+    $statement->execute(['migration:' . hash('sha256', $version)]);
+    return $statement->fetchColumn() !== false;
 }
 
 function mark_database_schema_current(PDO $pdo, string $version): void
 {
-    $statement = $pdo->prepare('INSERT IGNORE INTO schema_migrations (version) VALUES (:version)');
-    $statement->execute(['version' => $version]);
+    $statement = $pdo->prepare('INSERT IGNORE INTO settings (setting_key, setting_value) VALUES (?, ?)');
+    $statement->execute(['migration:' . hash('sha256', $version), json_encode(['version' => $version, 'applied_at' => date('Y-m-d H:i:s')], JSON_THROW_ON_ERROR)]);
 }
 
 function database_connection(): PDO
@@ -323,9 +276,13 @@ function database_connection(): PDO
         return $pdo;
     }
 
-    $schemaVersion = '20260902_01_project_tracking';
+    $schemaVersion = '20261002_01_twenty_tables';
     if (database_schema_is_current($pdo, $schemaVersion)) {
         return $pdo;
+    }
+    require_once __DIR__ . '/twenty-table-migration.php';
+    if (array_intersect(LEGACY_APPLICATION_TABLES, twenty_table_inventory($pdo))) {
+        throw new RuntimeException('Explicit migration required: scripts/migrate-twenty-tables.php');
     }
     ensure_primary_database_schema($pdo);
     normalize_database_collations($pdo);
@@ -383,39 +340,6 @@ function database_connection(): PDO
         state_json LONGTEXT NOT NULL,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-    $pdo->exec("CREATE TABLE IF NOT EXISTS project_title_checks (
-        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-        project_id VARCHAR(20) NOT NULL,
-        title VARCHAR(255) NOT NULL,
-        status VARCHAR(20) NOT NULL DEFAULT 'queued',
-        engine VARCHAR(80) DEFAULT '',
-        model VARCHAR(120) NULL,
-        max_similarity DECIMAL(7,6) NULL,
-        risk_level VARCHAR(20) DEFAULT '',
-        matches_json LONGTEXT NULL,
-        error_message TEXT NULL,
-        attempts TINYINT UNSIGNED NOT NULL DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        started_at DATETIME NULL,
-        completed_at DATETIME NULL,
-        INDEX idx_title_checks_queue (status, created_at),
-        INDEX idx_title_checks_project (project_id, id)
-    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-    $pdo->exec("CREATE TABLE IF NOT EXISTS project_risk_scores (
-        project_id VARCHAR(20) PRIMARY KEY,
-        score TINYINT UNSIGNED NOT NULL DEFAULT 0,
-        risk_level VARCHAR(20) NOT NULL DEFAULT 'low',
-        confidence TINYINT UNSIGNED NOT NULL DEFAULT 0,
-        stage VARCHAR(40) NOT NULL DEFAULT 'proposal',
-        progress_snapshot TINYINT UNSIGNED NOT NULL DEFAULT 0,
-        last_activity_at DATETIME NULL,
-        factors_json LONGTEXT NULL,
-        recommendation VARCHAR(500) DEFAULT '',
-        engine VARCHAR(80) NOT NULL DEFAULT 'behavior-risk-v1',
-        calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        INDEX idx_risk_level_score (risk_level, score),
-        INDEX idx_risk_calculated (calculated_at)
-    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
     $pdo->exec("CREATE TABLE IF NOT EXISTS audit_logs (
         id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
         actor_type VARCHAR(30) NOT NULL,
@@ -439,13 +363,6 @@ function database_connection(): PDO
         expires_at DATETIME NOT NULL,
         INDEX idx_user_sessions_user (user_type, user_id),
         INDEX idx_user_sessions_expires (expires_at)
-    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-    $pdo->exec("CREATE TABLE IF NOT EXISTS php_sessions (
-        session_id VARCHAR(128) PRIMARY KEY,
-        session_data LONGTEXT NOT NULL,
-        expires_at DATETIME NOT NULL,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        INDEX idx_php_sessions_expires (expires_at)
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
     $pdo->exec("CREATE TABLE IF NOT EXISTS password_reset_tokens (
         id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -582,8 +499,7 @@ function database_connection(): PDO
     ensure_database_foreign_key($pdo, 'notifications', 'student_id', 'students', 'fk_notifications_student', 'CASCADE');
     ensure_database_foreign_key($pdo, 'notifications', 'advisor_id', 'advisors', 'fk_notifications_advisor', 'CASCADE');
     ensure_database_foreign_key($pdo, 'notification_reads', 'notification_id', 'notifications', 'fk_notification_reads_notification', 'CASCADE');
-    ensure_database_foreign_key($pdo, 'project_title_checks', 'project_id', 'projects', 'fk_title_checks_project', 'CASCADE');
-    ensure_database_foreign_key($pdo, 'project_risk_scores', 'project_id', 'projects', 'fk_risk_project', 'CASCADE');
+    ensure_consolidated_columns($pdo);
     ensure_project_tracking_schema($pdo);
     mark_database_schema_current($pdo, $schemaVersion);
     return $pdo;
@@ -1072,6 +988,12 @@ function apply_calculated_project_progress(array $data): array
             static fn(array $document): bool => (string) ($document['project_id'] ?? '') === $projectId
         ));
         $data['projects'][$index]['progress'] = calculated_project_progress($documents);
+        // Completion is derived from the approved workflow, just like progress.
+        if ($data['projects'][$index]['progress'] === 100) {
+            $data['projects'][$index]['status'] = 'Completed';
+        } elseif (($project['status'] ?? '') === 'Completed') {
+            $data['projects'][$index]['status'] = 'Pending';
+        }
     }
     return $data;
 }

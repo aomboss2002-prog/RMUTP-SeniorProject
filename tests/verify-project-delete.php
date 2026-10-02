@@ -35,7 +35,7 @@ deletion_check($port > 1024 && $port !== 3306 && $port <= 65535, 'Isolated port 
 $pdo = new PDO("mysql:host=127.0.0.1;port=$port;charset=utf8mb4", 'root', '', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
 $dir = str_replace('\\', '/', (string) $pdo->query('SELECT @@datadir')->fetchColumn());
 $prefix = rtrim(str_replace('\\', '/', sys_get_temp_dir()), '/') . '/project-delete-';
-deletion_check(str_starts_with(strtolower($dir), strtolower($prefix)), 'Refuse non-test server');
+deletion_check(str_starts_with(strtolower($dir), strtolower($prefix)) || str_starts_with(strtolower($dir), strtolower(rtrim(str_replace('\\', '/', sys_get_temp_dir()), '/') . '/twenty-tables-')), 'Refuse non-test server');
 $schema = 'project_delete_test_' . bin2hex(random_bytes(8));
 $pdo->exec("CREATE DATABASE `$schema` CHARACTER SET utf8mb4");
 try {
@@ -54,8 +54,8 @@ try {
     $pdo->exec("INSERT INTO comments (id,student_id,document_id,author,message) VALUES ('C1','S1','D1','Advisor','Delete'),('C2','S1',NULL,'Advisor','Keep')");
     $pdo->exec("INSERT INTO approvals (id,student_id,document_id,step,reviewer) VALUES ('AP1','S1','D1','Proposal','Advisor')");
     $pdo->exec("INSERT INTO activities (id,title,actor) VALUES ('ACT1','Delete','Test'),('ACT2','Keep','Test')");
-    $pdo->exec("INSERT INTO project_title_checks (project_id,title) VALUES ('PRJ001','Delete')");
-    $pdo->exec("INSERT INTO project_risk_scores (project_id) VALUES ('PRJ001')");
+    runtime_record_put($pdo,'title',1,['id'=>1,'project_id'=>'PRJ001','title'=>'Delete']);
+    runtime_record_put($pdo,'risk','PRJ001',['project_id'=>'PRJ001']);
     $pdo->prepare("INSERT INTO app_state VALUES ('runtime',?,CURRENT_TIMESTAMP)")->execute([json_encode($state, JSON_THROW_ON_ERROR)]);
     // Force a failure late in the transaction: documents must be restored by rollback.
     $pdo->exec("CREATE TRIGGER fail_delete BEFORE DELETE ON projects FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='test failure'");
@@ -66,7 +66,8 @@ try {
     deletion_check((int) $pdo->query('SELECT COUNT(*) FROM projects')->fetchColumn() === 1, 'Only target deleted');
     deletion_check((int) $pdo->query('SELECT COUNT(*) FROM students')->fetchColumn() === 2 && (int) $pdo->query('SELECT COUNT(*) FROM advisors')->fetchColumn() === 1, 'Accounts retained');
     deletion_check((int) $pdo->query('SELECT COUNT(*) FROM documents')->fetchColumn() === 1 && (int) $pdo->query('SELECT COUNT(*) FROM comments')->fetchColumn() === 1, 'Documents/comments removed');
-    foreach (['project_title_checks','project_risk_scores','approvals'] as $table) deletion_check((int) $pdo->query("SELECT COUNT(*) FROM $table")->fetchColumn() === 0, 'History cleared: ' . $table);
+    foreach (['approvals'] as $table) deletion_check((int) $pdo->query("SELECT COUNT(*) FROM $table")->fetchColumn() === 0, 'History cleared: ' . $table);
+    deletion_check(runtime_record_get($pdo,'title',1)===null && runtime_record_get($pdo,'risk','PRJ001')===null,'Runtime AI cleared');
     deletion_check((int) $pdo->query('SELECT COUNT(*) FROM audit_logs')->fetchColumn() === 1, 'Deletion audit retained');
     $failed = admin_project_cleanup_files($pdo, $result['cleanup_job'], static function () { throw new RuntimeException('Simulated storage failure'); });
     deletion_check($failed['pending'] === 1, 'Failed file retained for retry; shared file skipped');

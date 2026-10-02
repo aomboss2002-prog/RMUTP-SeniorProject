@@ -407,13 +407,11 @@ erDiagram
 
 | ตาราง | Primary Key | หน้าที่และความสัมพันธ์สำคัญ |
 | --- | --- | --- |
-| `user_sessions` | `session_id` | Session ฝั่ง Backend แยกประเภทผู้ใช้ เก็บ IP, User-Agent, เวลาล่าสุด และวันหมดอายุ |
-| `php_sessions` | `session_id` | Session หลักของ PHP เมื่อกำหนด `SESSION_DRIVER=database` พร้อมดัชนีวันหมดอายุ |
+| `user_sessions` | `session_id` | Session ฝั่ง Backend และข้อมูล PHP Session (`session_data`) รองรับผู้ใช้ที่ยังไม่ล็อกอิน เก็บเวลาล่าสุดและวันหมดอายุ |
 | `password_reset_tokens` | `id` | Token รีเซ็ตรหัสผ่าน เก็บเฉพาะ SHA-256 hash พร้อมเวลาหมดอายุและเวลาที่ใช้แล้ว |
 | `audit_logs` | `id` | ประวัติการกระทำ ระบุผู้กระทำ Action, Entity และรายละเอียด JSON |
-| `settings` | `setting_key` | ค่าตั้งระบบแบบ Key-Value |
-| `app_state` | `state_key` | Runtime state รูปแบบ JSON สำหรับข้อมูลที่ระบบเดิมยังจัดเก็บแบบ Hybrid |
-| `schema_migrations` | `version` | บันทึกเวอร์ชัน Schema ที่ติดตั้งแล้ว ป้องกันการรัน DDL ซ้ำทุก Request |
+| `settings` | `setting_key` | ค่าตั้งระบบแบบ Key-Value และประวัติ migration ในคีย์ `migration:<hash>` |
+| `app_state` | `state_key` | Runtime state รูปแบบ JSON รวมคิวตรวจชื่อ (`ai-title:`), คะแนนความเสี่ยง (`ai-risk:`) และประวัติ worker (`job-run:`) |
 
 ### Foreign Key และพฤติกรรมเมื่อลบข้อมูล
 
@@ -762,11 +760,7 @@ Admin สามารถ **สำรองฐานข้อมูล** จา�
 - ปุ่ม **ส่งอีเมลทดสอบ** จะขอคำยืนยันก่อนส่งข้อความทั่วไปไปยัง `ADMIN_RECOVERY_EMAIL`
 - Scheduled worker ทำงานทุกวัน `02:00 UTC` หรือประมาณ `09:00 น.` ประเทศไทย และบันทึกเฉพาะสถานะ ระยะเวลา สรุปจำนวนงาน และ error code ที่ปลอดภัย
 
-หากฐานข้อมูลเดิมยังไม่มีตารางประวัติ worker ให้นำเข้า migration ต่อไปนี้หนึ่งครั้ง:
-
-```powershell
-cmd /c "C:\xampp\mysql\bin\mysql.exe -u root rmutp_senior_project < database\system-job-runs.sql"
-```
+ประวัติ worker เก็บใน `app_state` แล้ว สำหรับฐานข้อมูลเดิมให้ใช้ [ขั้นตอนย้ายเหลือ 20 ตาราง](docs/TWENTY_TABLE_MIGRATION.md)
 
 ตรวจหน้าและ API หลังเข้าสู่ระบบ Admin:
 
@@ -777,15 +771,11 @@ http://localhost/RMUTP-SeniorProject/api/index.php?resource=system-health
 
 ## การติดตามความก้าวหน้าโครงงาน (Project Pulse)
 
-ระบบคำนวณความก้าวหน้าจากเอกสารจริงโดยอัตโนมัติและไม่เปิดให้แก้เปอร์เซ็นต์เอง ลำดับคือ Proposal `0 → 15 → 30`, Draft บทที่ 1–5 เพิ่มบทละ `8%`, Complete `70 → 85 → 100` ทุกการส่ง ส่งแก้ อนุมัติ ส่งกลับแก้ไข ปฏิเสธ และลบเอกสารจะถูกบันทึกใน `project_progress_history` ด้วย `event_key` ที่ป้องกันเหตุการณ์ซ้ำจากการ Retry
+ระบบคำนวณความก้าวหน้าจากเอกสารจริงโดยอัตโนมัติและไม่เปิดให้แก้เปอร์เซ็นต์เอง ลำดับคือ Proposal `0 → 15 → 30`, Draft บทที่ 1–5 เพิ่มบทละ `8%`, Complete `70 → 85 → 100` ทุกการส่ง ส่งแก้ อนุมัติ ส่งกลับแก้ไข ปฏิเสธ และลบเอกสารจะถูกบันทึกใน `activities` (ชนิด `progress_updated`) ด้วย `event_key` ที่ป้องกันเหตุการณ์ซ้ำจากการ Retry
 
 Project Pulse แสดง 7 ขั้นตอน ได้แก่ Proposal, Draft บทที่ 1–5 และ Complete พร้อมขั้นตอนปัจจุบัน ผู้ที่ต้องดำเนินการต่อ กิจกรรมล่าสุด จำนวนวันที่ไม่มีความเคลื่อนไหว และกราฟแนวโน้ม อาจารย์ที่ได้รับมอบหมายเท่านั้นที่เพิ่ม/แก้ไข/ลบบันทึกติดตามได้ นักศึกษาอ่านบันทึกของโครงงานตนเองได้ และ Admin อ่านเพื่อตรวจสอบได้
 
-ฐานข้อมูลใหม่ติดตั้งด้วย:
-
-```powershell
-cmd /c "C:\xampp\mysql\bin\mysql.exe -u root rmutp_senior_project < database\project-tracking.sql"
-```
+ฐานข้อมูลใหม่ใช้ `database/database.sql` ซึ่งมี 20 ตาราง สำหรับฐานข้อมูลเดิมให้ใช้ [คู่มือ migration](docs/TWENTY_TABLE_MIGRATION.md)
 
 ฐานข้อมูลเดิมอาจยังไม่มีประวัติ ให้ตรวจรายการที่สามารถสร้างย้อนหลังได้โดยไม่เปลี่ยนข้อมูลก่อน:
 
@@ -799,7 +789,7 @@ C:\xampp\php\php.exe scripts\backfill-project-tracking.php
 C:\xampp\php\php.exe scripts\backfill-project-tracking.php --apply
 ```
 
-Backfill สร้างเฉพาะเหตุการณ์ที่พิสูจน์ได้จาก `uploaded_at`, `approved_at` และสถานะปัจจุบัน ไม่สร้างประวัติการส่งแก้ไขที่สูญหายขึ้นเอง ตารางใหม่ทั้งสองรายการจะถูกล้างด้วย `scripts/clear-database.php --yes` เช่นเดียวกับข้อมูล Workflow อื่น
+Backfill สร้างเฉพาะเหตุการณ์ที่พิสูจน์ได้จาก `uploaded_at`, `approved_at` และสถานะปัจจุบัน ไม่สร้างประวัติการส่งแก้ไขที่สูญหายขึ้นเอง ประวัติใน activities และข้อความติดตามใน comments จะถูกล้างด้วย `scripts/clear-database.php --yes` เช่นเดียวกับข้อมูล Workflow อื่น
 
 ## ติดตามข้อมูลเว็บไซต์อัตโนมัติสำหรับ Admin
 
@@ -815,3 +805,7 @@ Backfill สร้างเฉพาะเหตุการณ์ที่พ�
 C:\xampp\php\php.exe tests\verify-website-monitor.php
 node tests/verify-health-refresh.mjs
 ```
+
+## ฐานข้อมูล 20 ตาราง
+
+โค้ดรุ่นนี้ต้องย้ายฐานข้อมูลเดิมก่อนเปิดใช้งาน ดู [ขั้นตอนสำรอง ย้าย ตรวจสอบ และลบตารางเดิม](docs/TWENTY_TABLE_MIGRATION.md) ห้ามนำโค้ดเก่ากลับมาใช้กับฐานข้อมูลที่ย้ายแล้วโดยไม่กู้คืนชุดสำรองที่ตรงกัน

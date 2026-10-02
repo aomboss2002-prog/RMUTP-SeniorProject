@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/runtime-records.php';
 
 function admin_dashboard_payload(PDO $pdo): array
 {
@@ -26,7 +27,7 @@ function admin_dashboard_payload(PDO $pdo): array
 
     // This optional table may not exist before its migration is installed.
     try {
-        $risks = $pdo->query('SELECT LOWER(risk_level) AS risk_level, COUNT(*) AS total, MAX(calculated_at) AS latest_calculated_at FROM project_risk_scores GROUP BY LOWER(risk_level)')->fetchAll(PDO::FETCH_ASSOC);
+        $risks = $pdo->query('SELECT LOWER(risk_level) AS risk_level, COUNT(*) AS total, MAX(calculated_at) AS latest_calculated_at FROM ' . runtime_records_sql('risk') . ' r GROUP BY LOWER(risk_level)')->fetchAll(PDO::FETCH_ASSOC);
         foreach ($risks as $risk) {
             if (!array_key_exists($risk['risk_level'], $result['risk_overview']['counts'])) continue;
             $result['risk_overview']['counts'][$risk['risk_level']] = (int) $risk['total'];

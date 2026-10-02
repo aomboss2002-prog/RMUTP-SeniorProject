@@ -263,7 +263,7 @@
         if ($('body').data('page') !== 'system-health') return;
         $('#healthRefresh').on('click', loadHealth);
         $('#healthBackupDatabase').on('click', backupDatabase);
-        $('#healthRepairSchema').on('click', function () { diagnostic('repair-ai-schema', 'สร้างตาราง AI ที่ขาด?', 'ควรสำรองฐานข้อมูลก่อน ระบบจะสร้างเฉพาะ project_title_checks และ project_risk_scores ที่ยังไม่มี ไม่แก้ตารางเดิมและไม่ลบข้อมูล ต้องการดำเนินการต่อหรือไม่?', this); });
+        $('#healthRepairSchema').on('click', function () { diagnostic('repair-ai-schema', 'ตรวจพื้นที่จัดเก็บ AI?', 'ระบบใช้ app_state สำหรับข้อมูล AI การตรวจนี้ไม่สร้างตารางและไม่ลบข้อมูล ต้องการดำเนินการต่อหรือไม่?', this); });
         $('#healthTestStorage').on('click', function () { diagnostic('test-storage', 'ทดสอบ Storage?', 'ระบบจะสร้างไฟล์ขนาดเล็ก ตรวจสอบ แล้วลบทันที', this); });
         $('#healthTestEmail').on('click', function () { diagnostic('test-email', 'ส่งอีเมลทดสอบ?', 'ระบบจะส่งข้อความทั่วไปไปยังอีเมลกู้คืนของผู้ดูแล', this); });
         $(document).on('visibilitychange', function () {

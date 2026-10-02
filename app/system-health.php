@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/store.php';
+require_once __DIR__ . '/runtime-records.php';
 require_once __DIR__ . '/storage.php';
 require_once __DIR__ . '/mailer.php';
 require_once __DIR__ . '/mail-diagnostics.php';
@@ -39,15 +40,19 @@ function system_health_snapshot(): array
         $pdo = database_connection();
         $connected = (int) $pdo->query('SELECT 1')->fetchColumn() === 1;
         $latency = round((microtime(true) - $dbStarted) * 1000, 1);
-        $missingTables = array_values(array_filter(
-            ['project_title_checks', 'project_risk_scores'],
-            static fn(string $table): bool => !system_health_table_exists($pdo, $table)
-        ));
+        $presentTables = $pdo->query("SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_TYPE='BASE TABLE'")->fetchAll(PDO::FETCH_COLUMN);
+        $missingTables = array_values(array_diff(APPLICATION_TABLES, $presentTables));
+        $columnRows = $pdo->query("SELECT TABLE_NAME,COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('activities','comments','user_sessions')")->fetchAll(PDO::FETCH_ASSOC);
+        $presentColumns = [];
+        foreach ($columnRows as $column) $presentColumns[$column['TABLE_NAME'] . '.' . $column['COLUMN_NAME']] = true;
+        foreach (consolidated_columns() as $table => $columns) {
+            foreach ($columns as $column => $_) if (!isset($presentColumns[$table . '.' . $column])) $missingTables[] = $table . '.' . $column;
+        }
         $schemaReady = $missingTables === [];
         $services['database'] = system_health_state($connected && $schemaReady ? 'healthy' : 'degraded', $connected && $schemaReady ? 'พร้อมใช้งาน' : 'ควรตรวจสอบ', $schemaReady ? 'เชื่อมต่อฐานข้อมูลและโครงสร้างหลักพร้อมใช้งาน' : 'เชื่อมต่อได้ แต่โครงสร้างบางส่วนยังไม่ครบ', ['metric' => $latency . ' ms', 'latency_ms' => $latency, 'schema_ready' => $schemaReady]);
         $services['database']['missing_tables'] = $missingTables;
         if (!$schemaReady) {
-            $services['database']['message'] = 'ขาดตาราง: ' . implode(', ', $missingTables);
+            $services['database']['message'] = 'โครงสร้างที่ขาด: ' . implode(', ', $missingTables);
         }
     } catch (Throwable $error) {
         error_log('[SYSTEM HEALTH] database: ' . $error->getMessage());
@@ -75,13 +80,13 @@ function system_health_snapshot(): array
     $latestRisk = null;
     if ($pdo instanceof PDO) {
         try {
-            if (system_health_table_exists($pdo, 'project_title_checks')) {
-                foreach ($pdo->query('SELECT status, COUNT(*) total FROM project_title_checks GROUP BY status')->fetchAll() as $row) {
+            if (in_array('app_state', $presentTables ?? [], true)) {
+                foreach ($pdo->query('SELECT status, COUNT(*) total FROM ' . runtime_records_sql('title') . ' t GROUP BY status')->fetchAll() as $row) {
                     $key = strtolower((string) $row['status']); if (isset($titleCounts[$key])) $titleCounts[$key] = (int) $row['total'];
                 }
-                $latestTitle = $pdo->query("SELECT MAX(completed_at) FROM project_title_checks WHERE status = 'completed'")->fetchColumn() ?: null;
+                $latestTitle = $pdo->query("SELECT MAX(completed_at) FROM " . runtime_records_sql('title') . " t WHERE status = 'completed'")->fetchColumn() ?: null;
             }
-            if (system_health_table_exists($pdo, 'project_risk_scores')) $latestRisk = $pdo->query('SELECT MAX(calculated_at) FROM project_risk_scores')->fetchColumn() ?: null;
+            if (system_health_table_exists($pdo, 'app_state')) $latestRisk = $pdo->query('SELECT MAX(calculated_at) FROM ' . runtime_records_sql('risk') . ' r')->fetchColumn() ?: null;
         } catch (Throwable $error) { error_log('[SYSTEM HEALTH] ai: ' . $error->getMessage()); }
     }
     $aiTitleEnabled = $aiRiskEnabled = true;
@@ -99,7 +104,7 @@ function system_health_snapshot(): array
     $history = [];
     if ($pdo instanceof PDO) {
         try {
-            if (system_health_table_exists($pdo, 'system_job_runs')) $history = $pdo->query("SELECT status, started_at, finished_at, duration_ms, error_code FROM system_job_runs WHERE job_name = 'ai-web-worker' ORDER BY id DESC LIMIT 6")->fetchAll();
+            if (system_health_table_exists($pdo, 'app_state')) $history = $pdo->query("SELECT status, started_at, finished_at, duration_ms, error_code FROM " . runtime_records_sql('job') . " j WHERE job_name = 'ai-web-worker' ORDER BY id DESC LIMIT 6")->fetchAll();
         } catch (Throwable $error) { error_log('[SYSTEM HEALTH] cron: ' . $error->getMessage()); }
     }
     $last = $history[0] ?? null;
